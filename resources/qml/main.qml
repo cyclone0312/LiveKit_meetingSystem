@@ -58,6 +58,11 @@ ApplicationWindow {
         // 正式发布时改回 loginPage
         initialItem: homePage
         
+        // 开发阶段：设置默认用户名（跳过登录时使用）
+        Component.onCompleted: {
+            meetingController.userName = "开发测试用户"
+        }
+        
         // 过渡动画
         pushEnter: Transition {
             PropertyAnimation {
