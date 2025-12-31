@@ -252,12 +252,24 @@ void MeetingController::leaveMeeting()
 {
     qDebug() << "[MeetingController] 离开会议";
 
-    // 先离开 LiveKit 房间
+    // 【重要】先重置媒体状态（在断开连接之前）
+    // 这样可以避免在断开后尝试 unpublish 导致的问题
+    // 直接设置成员变量，不触发 setCameraOn/setMicOn 的副作用
+    if (m_isCameraOn)
+    {
+        m_isCameraOn = false;
+        emit cameraOnChanged();
+    }
+    if (m_isMicOn)
+    {
+        m_isMicOn = false;
+        emit micOnChanged();
+    }
+
+    // 然后离开 LiveKit 房间（会停止摄像头和麦克风）
     m_liveKitManager->leaveRoom();
 
     setInMeeting(false);
-    setMicOn(false);
-    setCameraOn(false);
     setScreenSharing(false);
     setRecording(false);
     setHandRaised(false);

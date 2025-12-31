@@ -10,6 +10,8 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QDebug>
+#include <QTimer>
+#include <QThread>
 
 // ==================== 配置常量 ====================
 namespace Config
@@ -107,13 +109,17 @@ void LiveKitRoomDelegate::onDisconnected(livekit::Room &room,
 {
     Q_UNUSED(room)
     Q_UNUSED(event)
-    if (manager)
+    if (manager && manager->m_isConnected)
     {
         qDebug() << "[LiveKit] 断开连接";
         manager->m_isConnected = false;
         manager->m_isConnecting = false;
         emit manager->connectionStateChanged();
         emit manager->disconnected();
+    }
+    else
+    {
+        qDebug() << "[LiveKit] 断开连接回调（已忽略，因为正在清理）";
     }
 }
 
@@ -255,7 +261,21 @@ void LiveKitManager::joinRoom(const QString &roomName, const QString &userName)
 
     if (m_isConnected)
     {
+        // 如果已连接，先离开旧房间
         leaveRoom();
+
+        // 【重要】使用延时确保 SDK 内部完全清理后再连接新房间
+        // 直接调用 requestToken 可能导致 SDK 状态冲突
+        m_pendingRoom = roomName;
+        m_pendingUser = userName;
+        m_isConnecting = true;
+        emit connectionStateChanged();
+
+        QTimer::singleShot(200, this, [this]()
+                           {
+            qDebug() << "[LiveKitManager] 延时后请求新房间 Token";
+            requestToken(m_pendingRoom, m_pendingUser); });
+        return;
     }
 
     m_pendingRoom = roomName;
@@ -286,7 +306,22 @@ void LiveKitManager::leaveRoom()
     emit cameraPublishedChanged();
     emit microphonePublishedChanged();
 
+    // 【重要】在销毁旧 Room 之前，先移除 delegate
+    // 避免销毁过程中触发回调导致崩溃
+    if (m_room)
+    {
+        m_room->setDelegate(nullptr);
+    }
+
     // 重新创建 Room 对象（SDK 没有 disconnect 方法，需要重新创建）
+    // 旧的 Room 会在这里被销毁，触发 SDK 内部的断开连接流程
+    m_room.reset();
+
+    // 给 SDK 一些时间完成内部清理
+    // 这是一个 workaround，因为 LiveKit SDK 内部可能有异步清理操作
+    QThread::msleep(100);
+
+    // 创建新的 Room 对象
     m_room = std::make_unique<livekit::Room>();
     m_room->setDelegate(m_delegate.get());
 
@@ -295,6 +330,25 @@ void LiveKitManager::leaveRoom()
     m_currentRoom.clear();
     m_currentUser.clear();
     m_currentToken.clear();
+
+    // 【重要】重建 LiveKit Track，确保下次加入时使用新的 Track
+    // 旧的 Track 已经和上一个 Room 关联，不能复用
+    if (m_mediaCapture)
+    {
+        qDebug() << "[LiveKitManager] 重建 LiveKit Track...";
+        // 重新创建视频轨道
+        auto videoSource = m_mediaCapture->getVideoSource();
+        if (videoSource)
+        {
+            m_mediaCapture->recreateVideoTrack();
+        }
+        // 重新创建音频轨道
+        auto audioSource = m_mediaCapture->getAudioSource();
+        if (audioSource)
+        {
+            m_mediaCapture->recreateAudioTrack();
+        }
+    }
 
     emit connectionStateChanged();
     emit currentRoomChanged();
@@ -490,60 +544,71 @@ void LiveKitManager::setError(const QString &error)
     qWarning() << "[LiveKitManager] 错误:" << error;
 }
 
-// ==================== 本地媒体控制 ====================
-
-void LiveKitManager::startLocalCamera()
-{
-    if (m_mediaCapture)
-    {
-        m_mediaCapture->startCamera();
-    }
-}
-
-void LiveKitManager::stopLocalCamera()
-{
-    if (m_mediaCapture)
-    {
-        m_mediaCapture->stopCamera();
-    }
-}
-
-void LiveKitManager::startLocalMicrophone()
-{
-    if (m_mediaCapture)
-    {
-        m_mediaCapture->startMicrophone();
-    }
-}
-
-void LiveKitManager::stopLocalMicrophone()
-{
-    if (m_mediaCapture)
-    {
-        m_mediaCapture->stopMicrophone();
-    }
-}
-
 // ==================== 轨道发布控制 ====================
+// 【设计说明】
+// 使用 mute/unmute 控制摄像头开关，而不是 publish/unpublish
+// 原因：unpublishTrack 是阻塞调用，在某些情况下会卡死
+// 轨道只在首次开启摄像头时发布一次，之后通过 mute 控制
 
 void LiveKitManager::publishCamera()
 {
+    qDebug() << "[LiveKitManager] publishCamera 被调用, isConnected=" << m_isConnected
+             << "cameraPublished=" << m_cameraPublished;
+
     if (!m_isConnected)
     {
         setError("未连接到房间，无法发布摄像头");
         return;
     }
 
-    if (m_cameraPublished)
+    // 如果已经发布过，只需要 unmute 和启动本地摄像头
+    if (m_cameraPublished && m_videoPublication)
     {
-        qDebug() << "[LiveKitManager] 摄像头已发布";
+        qDebug() << "[LiveKitManager] 摄像头已发布，启动本地摄像头并 unmute";
+
+        // 先启动本地摄像头
+        if (!m_mediaCapture->isCameraActive())
+        {
+            m_mediaCapture->startCamera();
+        }
+
+        try
+        {
+            m_videoPublication->setMuted(false);
+            qDebug() << "[LiveKitManager] 摄像头已 unmute";
+        }
+        catch (const std::exception &e)
+        {
+            qWarning() << "[LiveKitManager] unmute 失败:" << e.what();
+        }
         return;
     }
 
-    // 确保摄像头已启动
+    // 首次发布：先启动本地摄像头
     if (!m_mediaCapture->isCameraActive())
     {
+        qDebug() << "[LiveKitManager] 首次发布，启动本地摄像头...";
         m_mediaCapture->startCamera();
+
+        // 等待摄像头启动完成后再发布
+        // 使用单次定时器延迟发布
+        QTimer::singleShot(500, this, [this]()
+                           { doPublishCameraTrack(); });
+        return;
+    }
+
+    // 摄像头已经启动，直接发布
+    doPublishCameraTrack();
+}
+
+void LiveKitManager::doPublishCameraTrack()
+{
+    qDebug() << "[LiveKitManager] doPublishCameraTrack 被调用";
+
+    if (!m_isConnected || m_cameraPublished)
+    {
+        qDebug() << "[LiveKitManager] 跳过发布 (未连接或已发布)";
+        return;
     }
 
     auto *localParticipant = m_room->localParticipant();
@@ -561,6 +626,8 @@ void LiveKitManager::publishCamera()
             setError("视频轨道未创建");
             return;
         }
+
+        qDebug() << "[LiveKitManager] 正在发布视频轨道...";
 
         // 设置发布选项
         livekit::TrackPublishOptions options;
@@ -583,27 +650,27 @@ void LiveKitManager::publishCamera()
 
 void LiveKitManager::unpublishCamera()
 {
-    if (!m_isConnected || !m_cameraPublished)
-    {
-        return;
-    }
+    qDebug() << "[LiveKitManager] 关闭摄像头 (mute), isConnected=" << m_isConnected
+             << "cameraPublished=" << m_cameraPublished;
 
-    auto *localParticipant = m_room->localParticipant();
-    if (localParticipant && m_videoPublication)
+    // 【改进】使用 mute 代替 unpublish，避免阻塞
+    // unpublishTrack 是阻塞调用，可能导致程序卡死
+    if (m_videoPublication)
     {
         try
         {
-            localParticipant->unpublishTrack(m_videoPublication->sid());
-            m_videoPublication.reset();
-            m_cameraPublished = false;
-            emit cameraPublishedChanged();
-            qDebug() << "[LiveKitManager] 摄像头轨道已取消发布";
+            qDebug() << "[LiveKitManager] 执行视频 mute";
+            m_videoPublication->setMuted(true);
+            qDebug() << "[LiveKitManager] 摄像头已 mute";
         }
         catch (const std::exception &e)
         {
-            qWarning() << "[LiveKitManager] 取消发布摄像头失败:" << e.what();
+            qWarning() << "[LiveKitManager] mute 摄像头失败:" << e.what();
         }
     }
+
+    // 注意：不再设置 m_cameraPublished = false，因为轨道仍然发布着（只是 muted）
+    // 这样下次 publishCamera 时会走 unmute 路径
 }
 
 void LiveKitManager::toggleCamera()
@@ -620,22 +687,59 @@ void LiveKitManager::toggleCamera()
 
 void LiveKitManager::publishMicrophone()
 {
+    qDebug() << "[LiveKitManager] publishMicrophone 被调用, isConnected=" << m_isConnected
+             << "microphonePublished=" << m_microphonePublished;
+
     if (!m_isConnected)
     {
         setError("未连接到房间，无法发布麦克风");
         return;
     }
 
-    if (m_microphonePublished)
+    // 如果已经发布过，只需要 unmute 和启动本地麦克风
+    if (m_microphonePublished && m_audioPublication)
     {
-        qDebug() << "[LiveKitManager] 麦克风已发布";
+        qDebug() << "[LiveKitManager] 麦克风已发布，启动本地麦克风并 unmute";
+
+        if (!m_mediaCapture->isMicrophoneActive())
+        {
+            m_mediaCapture->startMicrophone();
+        }
+
+        try
+        {
+            m_audioPublication->setMuted(false);
+            qDebug() << "[LiveKitManager] 麦克风已 unmute";
+        }
+        catch (const std::exception &e)
+        {
+            qWarning() << "[LiveKitManager] unmute 麦克风失败:" << e.what();
+        }
         return;
     }
 
-    // 确保麦克风已启动
+    // 首次发布：先启动本地麦克风
     if (!m_mediaCapture->isMicrophoneActive())
     {
+        qDebug() << "[LiveKitManager] 首次发布，启动本地麦克风...";
         m_mediaCapture->startMicrophone();
+
+        QTimer::singleShot(300, this, [this]()
+                           { doPublishMicrophoneTrack(); });
+        return;
+    }
+
+    doPublishMicrophoneTrack();
+}
+
+void LiveKitManager::doPublishMicrophoneTrack()
+{
+    qDebug() << "[LiveKitManager] doPublishMicrophoneTrack 被调用";
+
+    if (!m_isConnected || m_microphonePublished)
+    {
+        qDebug() << "[LiveKitManager] 跳过发布麦克风 (未连接或已发布)";
+        return;
     }
 
     auto *localParticipant = m_room->localParticipant();
@@ -653,6 +757,8 @@ void LiveKitManager::publishMicrophone()
             setError("音频轨道未创建");
             return;
         }
+
+        qDebug() << "[LiveKitManager] 正在发布音频轨道...";
 
         // 设置发布选项
         livekit::TrackPublishOptions options;
@@ -675,25 +781,21 @@ void LiveKitManager::publishMicrophone()
 
 void LiveKitManager::unpublishMicrophone()
 {
-    if (!m_isConnected || !m_microphonePublished)
-    {
-        return;
-    }
+    qDebug() << "[LiveKitManager] 尝试取消发布麦克风, isConnected=" << m_isConnected
+             << "microphonePublished=" << m_microphonePublished;
 
-    auto *localParticipant = m_room->localParticipant();
-    if (localParticipant && m_audioPublication)
+    // 【改进】使用 mute 代替 unpublish，避免阻塞
+    if (m_audioPublication)
     {
         try
         {
-            localParticipant->unpublishTrack(m_audioPublication->sid());
-            m_audioPublication.reset();
-            m_microphonePublished = false;
-            emit microphonePublishedChanged();
-            qDebug() << "[LiveKitManager] 麦克风轨道已取消发布";
+            qDebug() << "[LiveKitManager] 执行麦克风 mute";
+            m_audioPublication->setMuted(true);
+            qDebug() << "[LiveKitManager] 麦克风已 mute";
         }
         catch (const std::exception &e)
         {
-            qWarning() << "[LiveKitManager] 取消发布麦克风失败:" << e.what();
+            qWarning() << "[LiveKitManager] mute 麦克风失败:" << e.what();
         }
     }
 }

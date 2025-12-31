@@ -151,6 +151,10 @@ public:
     std::shared_ptr<livekit::VideoSource> getVideoSource() { return m_lkVideoSource; }
     std::shared_ptr<livekit::AudioSource> getAudioSource() { return m_lkAudioSource; }
 
+    // 重建 LiveKit Track（离开房间后需要重建，旧 Track 不能复用）
+    void recreateVideoTrack();
+    void recreateAudioTrack();
+
 public slots:
     /**
      * @brief 启动/停止摄像头

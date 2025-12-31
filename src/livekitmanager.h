@@ -162,13 +162,14 @@ public slots:
     void unpublishMicrophone();
     void toggleMicrophone();
 
+private:
     /**
-     * @brief 开始/停止本地媒体采集（不发布到房间）
+     * @brief 实际执行视频轨道发布（内部方法）
      */
-    void startLocalCamera();
-    void stopLocalCamera();
-    void startLocalMicrophone();
-    void stopLocalMicrophone();
+    void doPublishCameraTrack();
+    void doPublishMicrophoneTrack();
+
+public slots:
 
     // 兼容旧接口
     void sendChatMessage(const QString &message);

@@ -369,11 +369,35 @@ std::shared_ptr<livekit::LocalAudioTrack> MediaCapture::getAudioTrack()
 }
 
 // =============================================================================
+// 重建 LiveKit 轨道（离开房间后调用）
+// =============================================================================
+
+void MediaCapture::recreateVideoTrack()
+{
+    if (m_lkVideoSource)
+    {
+        m_lkVideoTrack = livekit::LocalVideoTrack::createLocalVideoTrack("camera", m_lkVideoSource);
+        qDebug() << "[MediaCapture] 视频轨道已重建";
+    }
+}
+
+void MediaCapture::recreateAudioTrack()
+{
+    if (m_lkAudioSource)
+    {
+        m_lkAudioTrack = livekit::LocalAudioTrack::createLocalAudioTrack("microphone", m_lkAudioSource);
+        qDebug() << "[MediaCapture] 音频轨道已重建";
+    }
+}
+
+// =============================================================================
 // 摄像头控制
 // =============================================================================
 
 void MediaCapture::startCamera()
 {
+    qDebug() << "[MediaCapture] startCamera 被调用, cameraActive=" << m_cameraActive;
+
     if (m_cameraActive)
     {
         qDebug() << "[MediaCapture] 摄像头已在运行";
@@ -387,31 +411,50 @@ void MediaCapture::startCamera()
         return;
     }
 
+    // 确保旧的摄像头资源已清理
+    if (m_camera)
+    {
+        qDebug() << "[MediaCapture] 清理旧的摄像头对象...";
+        m_captureSession->setCamera(nullptr);
+        m_camera.reset();
+    }
+
     qDebug() << "[MediaCapture] 启动摄像头...";
 
-    // 创建摄像头
-    QCameraDevice device = m_cameraDevices.at(m_currentCameraIndex);
-    m_camera = std::make_unique<QCamera>(device);
+    try
+    {
+        // 创建摄像头
+        QCameraDevice device = m_cameraDevices.at(m_currentCameraIndex);
+        qDebug() << "[MediaCapture] 使用摄像头:" << device.description();
 
-    // 连接信号
-    connect(m_camera.get(), &QCamera::activeChanged,
-            this, &MediaCapture::onCameraActiveChanged);
-    connect(m_camera.get(), &QCamera::errorOccurred,
-            this, &MediaCapture::onCameraErrorOccurred);
+        m_camera = std::make_unique<QCamera>(device);
 
-    // 设置采集会话
-    m_captureSession->setCamera(m_camera.get());
+        // 连接信号
+        connect(m_camera.get(), &QCamera::activeChanged,
+                this, &MediaCapture::onCameraActiveChanged);
+        connect(m_camera.get(), &QCamera::errorOccurred,
+                this, &MediaCapture::onCameraErrorOccurred);
 
-    // 设置视频输出 - 使用内部 sink 来处理帧并转发到 LiveKit
-    m_captureSession->setVideoSink(m_internalVideoSink.get());
+        // 设置采集会话
+        m_captureSession->setCamera(m_camera.get());
 
-    // 启动摄像头
-    m_camera->start();
+        // 设置视频输出 - 使用内部 sink 来处理帧并转发到 LiveKit
+        m_captureSession->setVideoSink(m_internalVideoSink.get());
 
-    // 启用视频帧处理
-    m_videoHandler->setEnabled(true);
+        // 启动摄像头
+        qDebug() << "[MediaCapture] 正在启动摄像头...";
+        m_camera->start();
 
-    qDebug() << "[MediaCapture] 摄像头启动命令已发送";
+        // 启用视频帧处理
+        m_videoHandler->setEnabled(true);
+
+        qDebug() << "[MediaCapture] 摄像头启动命令已发送";
+    }
+    catch (const std::exception &e)
+    {
+        qCritical() << "[MediaCapture] 启动摄像头异常:" << e.what();
+        emit cameraError(QString("启动摄像头失败: %1").arg(e.what()));
+    }
 }
 
 void MediaCapture::stopCamera()
@@ -432,6 +475,9 @@ void MediaCapture::stopCamera()
         m_captureSession->setCamera(nullptr);
         m_camera.reset();
     }
+
+    // 清除外部 VideoSink 引用，防止指向已销毁的 QML 对象
+    m_externalVideoSink = nullptr;
 
     m_cameraActive = false;
     emit cameraActiveChanged();
