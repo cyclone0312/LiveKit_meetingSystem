@@ -12,6 +12,7 @@
 #include <QDebug>
 #include <QTimer>
 #include <QThread>
+#include <QtConcurrent/QtConcurrent>
 
 // ==================== 配置常量 ====================
 namespace Config
@@ -513,28 +514,37 @@ void LiveKitManager::connectToRoom(const QString &token)
     std::string url = m_serverUrl.toStdString();
     std::string tokenStr = token.toStdString();
 
-    bool success = m_room->Connect(url, tokenStr, options);
+    // 【重要】Connect() 是阻塞调用，会阻塞主线程导致 UI 卡死
+    // 将连接操作放到后台线程执行，避免阻塞 UI
+    QtConcurrent::run([this, url, tokenStr, options]()
+                      {
+        qDebug() << "[LiveKitManager] 后台线程开始连接...";
+        
+        bool success = m_room->Connect(url, tokenStr, options);
 
-    if (success)
-    {
-        qDebug() << "[LiveKitManager] 连接成功!";
-        m_isConnected = true;
-        m_isConnecting = false;
-        m_currentRoom = m_pendingRoom;
-        m_currentUser = m_pendingUser;
+        // 连接完成后，通过 QMetaObject::invokeMethod 回到主线程处理结果
+        QMetaObject::invokeMethod(this, [this, success]() {
+            if (success)
+            {
+                qDebug() << "[LiveKitManager] 连接成功!";
+                m_isConnected = true;
+                m_isConnecting = false;
+                m_currentRoom = m_pendingRoom;
+                m_currentUser = m_pendingUser;
 
-        emit connectionStateChanged();
-        emit currentRoomChanged();
-        emit currentUserChanged();
-        emit connected();
-    }
-    else
-    {
-        qWarning() << "[LiveKitManager] 连接失败";
-        setError("连接 LiveKit Server 失败");
-        m_isConnecting = false;
-        emit connectionStateChanged();
-    }
+                emit connectionStateChanged();
+                emit currentRoomChanged();
+                emit currentUserChanged();
+                emit connected();
+            }
+            else
+            {
+                qWarning() << "[LiveKitManager] 连接失败";
+                setError("连接 LiveKit Server 失败");
+                m_isConnecting = false;
+                emit connectionStateChanged();
+            }
+        }, Qt::QueuedConnection); });
 }
 
 void LiveKitManager::setError(const QString &error)
