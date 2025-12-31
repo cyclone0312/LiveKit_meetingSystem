@@ -72,15 +72,28 @@ void MeetingController::setMicOn(bool on)
         emit showMessage(on ? "麦克风已开启" : "麦克风已关闭");
 
         // 同步到 LiveKit
-        if (m_liveKitManager && m_liveKitManager->isConnected())
+        if (m_liveKitManager)
         {
             if (on)
             {
-                m_liveKitManager->publishMicrophone();
+                // 开启麦克风并发布
+                if (m_liveKitManager->isConnected())
+                {
+                    m_liveKitManager->publishMicrophone();
+                }
             }
             else
             {
-                m_liveKitManager->unpublishMicrophone();
+                // 取消发布并停止麦克风
+                if (m_liveKitManager->isConnected())
+                {
+                    m_liveKitManager->unpublishMicrophone();
+                }
+                // 无论是否连接，都停止本地麦克风
+                if (m_liveKitManager->mediaCapture())
+                {
+                    m_liveKitManager->mediaCapture()->stopMicrophone();
+                }
             }
         }
     }
@@ -95,15 +108,28 @@ void MeetingController::setCameraOn(bool on)
         emit showMessage(on ? "摄像头已开启" : "摄像头已关闭");
 
         // 同步到 LiveKit
-        if (m_liveKitManager && m_liveKitManager->isConnected())
+        if (m_liveKitManager)
         {
             if (on)
             {
-                m_liveKitManager->publishCamera();
+                // 开启摄像头并发布
+                if (m_liveKitManager->isConnected())
+                {
+                    m_liveKitManager->publishCamera();
+                }
             }
             else
             {
-                m_liveKitManager->unpublishCamera();
+                // 取消发布并停止摄像头
+                if (m_liveKitManager->isConnected())
+                {
+                    m_liveKitManager->unpublishCamera();
+                }
+                // 无论是否连接，都停止本地摄像头
+                if (m_liveKitManager->mediaCapture())
+                {
+                    m_liveKitManager->mediaCapture()->stopCamera();
+                }
             }
         }
     }

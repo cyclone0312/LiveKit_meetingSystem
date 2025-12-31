@@ -124,6 +124,25 @@ public:
     void setCurrentCameraIndex(int index);
     void setCurrentMicrophoneIndex(int index);
 
+    // ========== QML 可调用的方法 ==========
+    // 【重要知识点】C++ 方法暴露给 QML 的三种方式：
+    //
+    // 1. Q_INVOKABLE - 标记方法可被 QML 直接调用
+    //    用法: mediaCapture.bindVideoSink(sink)
+    //
+    // 2. public slots - 槽函数自动暴露给 QML
+    //    用法: 同上，且可连接信号
+    //
+    // 3. Q_PROPERTY WRITE - 只能通过属性赋值触发
+    //    用法: mediaCapture.videoSink = sink (不能直接调用 setVideoSink)
+    //
+    // 注意：普通的 C++ public 方法（如 setVideoSink）无法被 QML 调用！
+    // QML 调用时会报错：TypeError: Property 'xxx' is not a function
+    Q_INVOKABLE void bindVideoSink(QVideoSink *sink) { setVideoSink(sink); }
+
+    // 获取 QMediaCaptureSession（供 QML VideoOutput 使用）
+    Q_INVOKABLE QMediaCaptureSession *captureSession() const { return m_captureSession.get(); }
+
     // 获取 LiveKit 轨道
     std::shared_ptr<livekit::LocalVideoTrack> getVideoTrack();
     std::shared_ptr<livekit::LocalAudioTrack> getAudioTrack();

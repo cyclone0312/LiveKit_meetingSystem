@@ -29,6 +29,9 @@ class MeetingController : public QObject
     Q_PROPERTY(bool isConnecting READ isConnecting NOTIFY connectingChanged)
     Q_PROPERTY(bool isConnected READ isConnected NOTIFY connectedChanged)
 
+    // 新增：暴露 LiveKitManager 给 QML
+    Q_PROPERTY(LiveKitManager *liveKitManager READ liveKitManager CONSTANT)
+
 public:
     explicit MeetingController(QObject *parent = nullptr);
     ~MeetingController();

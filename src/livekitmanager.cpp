@@ -271,6 +271,21 @@ void LiveKitManager::leaveRoom()
 {
     qDebug() << "[LiveKitManager] 离开房间:" << m_currentRoom;
 
+    // 先停止本地媒体采集
+    if (m_mediaCapture)
+    {
+        m_mediaCapture->stopCamera();
+        m_mediaCapture->stopMicrophone();
+    }
+
+    // 清除发布状态
+    m_videoPublication.reset();
+    m_audioPublication.reset();
+    m_cameraPublished = false;
+    m_microphonePublished = false;
+    emit cameraPublishedChanged();
+    emit microphonePublishedChanged();
+
     // 重新创建 Room 对象（SDK 没有 disconnect 方法，需要重新创建）
     m_room = std::make_unique<livekit::Room>();
     m_room->setDelegate(m_delegate.get());

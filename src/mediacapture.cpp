@@ -275,18 +275,18 @@ QVideoSink *MediaCapture::videoSink() const
 
 void MediaCapture::setVideoSink(QVideoSink *sink)
 {
+    qDebug() << "[MediaCapture] setVideoSink 被调用, sink=" << sink
+             << "当前 m_externalVideoSink=" << m_externalVideoSink
+             << "cameraActive=" << m_cameraActive;
+
     if (m_externalVideoSink != sink)
     {
         m_externalVideoSink = sink;
-
-        // 如果摄像头正在运行，同时输出到外部 sink
-        if (m_captureSession)
-        {
-            m_captureSession->setVideoSink(sink);
-        }
-
+        // 注意：不设置 m_captureSession->setVideoSink(sink)
+        // 因为 captureSession 已经连接到内部的 m_internalVideoSink
+        // 帧会通过 onVideoFrameReceived 转发到 m_externalVideoSink
         emit videoSinkChanged();
-        qDebug() << "[MediaCapture] 外部 VideoSink 已设置";
+        qDebug() << "[MediaCapture] 外部 VideoSink 已设置:" << (sink ? "有效" : "null");
     }
 }
 
@@ -401,13 +401,9 @@ void MediaCapture::startCamera()
 
     // 设置采集会话
     m_captureSession->setCamera(m_camera.get());
-    m_captureSession->setVideoSink(m_internalVideoSink.get());
 
-    // 如果有外部 sink，也输出到外部
-    if (m_externalVideoSink)
-    {
-        m_captureSession->setVideoSink(m_externalVideoSink);
-    }
+    // 设置视频输出 - 使用内部 sink 来处理帧并转发到 LiveKit
+    m_captureSession->setVideoSink(m_internalVideoSink.get());
 
     // 启动摄像头
     m_camera->start();
@@ -568,6 +564,13 @@ void MediaCapture::onVideoFrameReceived(const QVideoFrame &frame)
     if (m_externalVideoSink && m_externalVideoSink != m_internalVideoSink.get())
     {
         m_externalVideoSink->setVideoFrame(frame);
+
+        // 每100帧打印一次调试信息
+        static int frameCount = 0;
+        if (++frameCount % 100 == 0)
+        {
+            qDebug() << "[MediaCapture] 已发送" << frameCount << "帧到外部 VideoSink";
+        }
     }
 
     emit videoFrameCaptured();

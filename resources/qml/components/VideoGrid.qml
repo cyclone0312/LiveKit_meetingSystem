@@ -2,8 +2,29 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 
+/**
+ * VideoGrid - 参会者视频网格布局
+ * 
+ * 【GridView Delegate 作用域问题】
+ * GridView 的 delegate 是动态创建的组件，有独立的作用域。
+ * delegate 内部无法直接访问全局变量（如 main.cpp 中 setContextProperty 注册的 mediaCapture）。
+ * 
+ * 解决方案：
+ * 1. 在 VideoGrid 中定义属性 mediaCaptureRef 保存全局 mediaCapture 的引用
+ * 2. delegate 通过 videoGrid.mediaCaptureRef 访问（通过父组件 id 访问）
+ * 
+ * 错误示例（会得到 null）：
+ *   delegate: VideoItem { mediaCapture: mediaCapture }  // ❌ delegate 内访问全局变量失败
+ * 
+ * 正确示例：
+ *   delegate: VideoItem { mediaCapture: videoGrid.mediaCaptureRef }  // ✅ 通过父组件属性传递
+ */
 Item {
     id: videoGrid
+    
+    // 【关键】将全局 mediaCapture 保存为本组件的属性
+    // 这样 delegate 就可以通过 videoGrid.mediaCaptureRef 访问
+    property var mediaCaptureRef: mediaCapture
     
     property int columns: calculateColumns()
     property int rows: calculateRows()
@@ -37,15 +58,21 @@ Item {
         model: participantModel
         
         delegate: VideoItem {
+            id: videoItemDelegate
             width: gridView.cellWidth - 8
             height: gridView.cellHeight - 8
             
             participantName: model.name
-            isMicOn: model.isMicOn
-            isCameraOn: model.isCameraOn
+            isMicOn: model.isLocal ? meetingController.isMicOn : model.isMicOn
+            isCameraOn: model.isLocal ? meetingController.isCameraOn : model.isCameraOn
             isHost: model.isHost
             isHandRaised: model.isHandRaised
             isScreenSharing: model.isScreenSharing
+            isLocalUser: model.isLocal  // 标记是否为本地用户
+            
+            // 【重要】通过 videoGrid 的属性传递 mediaCapture，而非直接引用全局变量
+            // 只有本地用户需要 mediaCapture 来显示本地摄像头画面
+            mediaCapture: model.isLocal ? videoGrid.mediaCaptureRef : null
         }
         
         // 空状态

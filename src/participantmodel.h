@@ -15,6 +15,7 @@ struct Participant
     bool isScreenSharing;
     bool isHost;
     bool isHandRaised;
+    bool isLocal; // 是否为本地用户
 };
 
 class ParticipantModel : public QAbstractListModel
@@ -32,7 +33,8 @@ public:
         IsCameraOnRole,
         IsScreenSharingRole,
         IsHostRole,
-        IsHandRaisedRole
+        IsHandRaisedRole,
+        IsLocalRole // 新增：本地用户角色
     };
 
     explicit ParticipantModel(QObject *parent = nullptr);
@@ -45,7 +47,7 @@ public:
     int count() const;
 
 public slots:
-    void addParticipant(const QString &id, const QString &name, bool isHost = false);
+    void addParticipant(const QString &id, const QString &name, bool isHost = false, bool isLocal = false);
     void removeParticipant(const QString &id);
     void updateParticipant(const QString &id, bool isMicOn, bool isCameraOn);
     void setParticipantHandRaised(const QString &id, bool raised);

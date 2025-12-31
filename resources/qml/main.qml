@@ -33,11 +33,30 @@ ApplicationWindow {
     
     color: backgroundColor
     
+    // 监听 meetingController 的摄像头/麦克风状态变化，同步更新本地用户的 ParticipantModel
+    Connections {
+        target: meetingController
+        
+        function onCameraOnChanged() {
+            // 更新 ParticipantModel 中本地用户 (id="self") 的摄像头状态
+            participantModel.updateParticipant("self", meetingController.isMicOn, meetingController.isCameraOn)
+            console.log("[main.qml] 摄像头状态变化:", meetingController.isCameraOn)
+        }
+        
+        function onMicOnChanged() {
+            // 更新 ParticipantModel 中本地用户的麦克风状态
+            participantModel.updateParticipant("self", meetingController.isMicOn, meetingController.isCameraOn)
+            console.log("[main.qml] 麦克风状态变化:", meetingController.isMicOn)
+        }
+    }
+    
     // 页面堆栈
     StackView {
         id: stackView
         anchors.fill: parent
-        initialItem: loginPage
+        // 开发阶段：直接进入 homePage 跳过登录
+        // 正式发布时改回 loginPage
+        initialItem: homePage
         
         // 过渡动画
         pushEnter: Transition {

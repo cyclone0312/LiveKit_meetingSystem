@@ -38,6 +38,8 @@ QVariant ParticipantModel::data(const QModelIndex &index, int role) const
         return participant.isHost;
     case IsHandRaisedRole:
         return participant.isHandRaised;
+    case IsLocalRole:
+        return participant.isLocal;
     default:
         return QVariant();
     }
@@ -54,6 +56,7 @@ QHash<int, QByteArray> ParticipantModel::roleNames() const
     roles[IsScreenSharingRole] = "isScreenSharing";
     roles[IsHostRole] = "isHost";
     roles[IsHandRaisedRole] = "isHandRaised";
+    roles[IsLocalRole] = "isLocal";
     return roles;
 }
 
@@ -62,7 +65,7 @@ int ParticipantModel::count() const
     return m_participants.count();
 }
 
-void ParticipantModel::addParticipant(const QString &id, const QString &name, bool isHost)
+void ParticipantModel::addParticipant(const QString &id, const QString &name, bool isHost, bool isLocal)
 {
     // 检查是否已存在
     if (findParticipantIndex(id) >= 0)
@@ -74,11 +77,12 @@ void ParticipantModel::addParticipant(const QString &id, const QString &name, bo
     participant.id = id;
     participant.name = name;
     participant.avatarUrl = "";
-    participant.isMicOn = QRandomGenerator::global()->bounded(2) == 1;
-    participant.isCameraOn = QRandomGenerator::global()->bounded(2) == 1;
+    participant.isMicOn = isLocal ? false : QRandomGenerator::global()->bounded(2) == 1;
+    participant.isCameraOn = isLocal ? false : QRandomGenerator::global()->bounded(2) == 1;
     participant.isScreenSharing = false;
     participant.isHost = isHost;
     participant.isHandRaised = false;
+    participant.isLocal = isLocal;
 
     m_participants.append(participant);
 
@@ -150,14 +154,14 @@ void ParticipantModel::addDemoParticipants()
 {
     QStringList names = {"张三", "李四", "王五", "赵六", "钱七", "孙八", "周九"};
 
-    // 首先添加主持人（自己）
-    addParticipant("self", "我", true);
+    // 首先添加主持人（自己）- 设置 isLocal=true
+    addParticipant("self", "我", true, true);
 
     // 随机添加几个参会者
     int count = QRandomGenerator::global()->bounded(2, 6);
     for (int i = 0; i < count && i < names.count(); ++i)
     {
-        addParticipant(QString::number(i + 1), names[i], false);
+        addParticipant(QString::number(i + 1), names[i], false, false);
     }
 }
 
