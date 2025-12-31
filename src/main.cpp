@@ -9,6 +9,7 @@
 #include "participantmodel.h"
 #include "chatmodel.h"
 #include "livekitmanager.h" // LiveKit 管理器：负责与服务器通信
+#include "mediacapture.h"   // 媒体采集器：负责摄像头和麦克风采集
 
 int main(int argc, char *argv[])
 {
@@ -40,6 +41,11 @@ int main(int argc, char *argv[])
     qmlRegisterType<ParticipantModel>("Meeting", 1, 0, "ParticipantModel");
     qmlRegisterType<ChatModel>("Meeting", 1, 0, "ChatModel");
     qmlRegisterType<LiveKitManager>("Meeting", 1, 0, "LiveKitManager"); // 注册 LiveKit 管理器
+    qmlRegisterType<MediaCapture>("Meeting", 1, 0, "MediaCapture");     // 注册媒体采集器
+
+    // 注册不可创建类型（用于属性类型识别）
+    qmlRegisterUncreatableType<VideoFrameHandler>("Meeting", 1, 0, "VideoFrameHandler", "Cannot create VideoFrameHandler");
+    qmlRegisterUncreatableType<AudioFrameHandler>("Meeting", 1, 0, "AudioFrameHandler", "Cannot create AudioFrameHandler");
 
     // ========== 6. QML引擎和对象实例化 ==========
     // 创建QML引擎，负责加载QML文件、管理QML对象的生命周期
@@ -61,6 +67,9 @@ int main(int argc, char *argv[])
 
     // 将 LiveKitManager 也暴露给 QML（通过 MeetingController 获取）
     engine.rootContext()->setContextProperty("liveKitManager", meetingController.liveKitManager());
+
+    // 将 MediaCapture 暴露给 QML（用于视频预览等）
+    engine.rootContext()->setContextProperty("mediaCapture", meetingController.liveKitManager()->mediaCapture());
 
     // ========== 8. 加载QML文件 ==========
     // 指定主QML文件的路径

@@ -23,6 +23,10 @@
 #include <livekit/room_delegate.h>
 #include <livekit/local_participant.h>
 #include <livekit/remote_participant.h>
+#include <livekit/local_track_publication.h>
+
+// 媒体采集（需要完整定义，因为 Q_PROPERTY 使用了 MediaCapture*）
+#include "mediacapture.h"
 
 // 前向声明
 class LiveKitManager;
@@ -85,6 +89,11 @@ class LiveKitManager : public QObject
     Q_PROPERTY(QString tokenServerUrl READ tokenServerUrl WRITE setTokenServerUrl NOTIFY tokenServerUrlChanged)
     Q_PROPERTY(QString errorMessage READ errorMessage NOTIFY errorOccurred)
 
+    // 媒体状态属性
+    Q_PROPERTY(bool cameraPublished READ isCameraPublished NOTIFY cameraPublishedChanged)
+    Q_PROPERTY(bool microphonePublished READ isMicrophonePublished NOTIFY microphonePublishedChanged)
+    Q_PROPERTY(MediaCapture *mediaCapture READ mediaCapture CONSTANT)
+
 public:
     explicit LiveKitManager(QObject *parent = nullptr);
     ~LiveKitManager();
@@ -97,6 +106,11 @@ public:
     QString serverUrl() const;
     QString tokenServerUrl() const;
     QString errorMessage() const;
+
+    // 媒体状态 Getter
+    bool isCameraPublished() const;
+    bool isMicrophonePublished() const;
+    MediaCapture *mediaCapture() const;
 
     // 属性 Setter
     void setServerUrl(const QString &url);
@@ -134,6 +148,28 @@ public slots:
      */
     void sendData(const QByteArray &data);
 
+    /**
+     * @brief 发布/取消发布摄像头轨道
+     */
+    void publishCamera();
+    void unpublishCamera();
+    void toggleCamera();
+
+    /**
+     * @brief 发布/取消发布麦克风轨道
+     */
+    void publishMicrophone();
+    void unpublishMicrophone();
+    void toggleMicrophone();
+
+    /**
+     * @brief 开始/停止本地媒体采集（不发布到房间）
+     */
+    void startLocalCamera();
+    void stopLocalCamera();
+    void startLocalMicrophone();
+    void stopLocalMicrophone();
+
     // 兼容旧接口
     void sendChatMessage(const QString &message);
     void updateMicState(bool enabled);
@@ -165,6 +201,10 @@ signals:
     void trackUnsubscribed(const QString &participantIdentity, const QString &trackSid);
     void trackMuted(const QString &participantIdentity, const QString &trackSid, bool muted);
 
+    // 本地媒体发布信号
+    void cameraPublishedChanged();
+    void microphonePublishedChanged();
+
     // 兼容旧接口的信号
     void participantMicChanged(const QString &id, bool enabled);
     void participantCameraChanged(const QString &id, bool enabled);
@@ -194,6 +234,15 @@ private:
     // LiveKit SDK
     std::unique_ptr<livekit::Room> m_room;
     std::unique_ptr<LiveKitRoomDelegate> m_delegate;
+
+    // 媒体采集
+    std::unique_ptr<MediaCapture> m_mediaCapture;
+
+    // 已发布的轨道
+    std::shared_ptr<livekit::LocalTrackPublication> m_videoPublication;
+    std::shared_ptr<livekit::LocalTrackPublication> m_audioPublication;
+    bool m_cameraPublished = false;
+    bool m_microphonePublished = false;
 
     // 服务器配置
     QString m_serverUrl;

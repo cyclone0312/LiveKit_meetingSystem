@@ -70,6 +70,19 @@ void MeetingController::setMicOn(bool on)
         m_isMicOn = on;
         emit micOnChanged();
         emit showMessage(on ? "麦克风已开启" : "麦克风已关闭");
+
+        // 同步到 LiveKit
+        if (m_liveKitManager && m_liveKitManager->isConnected())
+        {
+            if (on)
+            {
+                m_liveKitManager->publishMicrophone();
+            }
+            else
+            {
+                m_liveKitManager->unpublishMicrophone();
+            }
+        }
     }
 }
 
@@ -80,6 +93,19 @@ void MeetingController::setCameraOn(bool on)
         m_isCameraOn = on;
         emit cameraOnChanged();
         emit showMessage(on ? "摄像头已开启" : "摄像头已关闭");
+
+        // 同步到 LiveKit
+        if (m_liveKitManager && m_liveKitManager->isConnected())
+        {
+            if (on)
+            {
+                m_liveKitManager->publishCamera();
+            }
+            else
+            {
+                m_liveKitManager->unpublishCamera();
+            }
+        }
     }
 }
 

@@ -4,6 +4,7 @@
  */
 
 #include "livekitmanager.h"
+#include "mediacapture.h"
 #include <QNetworkRequest>
 #include <QNetworkReply>
 #include <QJsonDocument>
@@ -170,7 +171,7 @@ void LiveKitRoomDelegate::onUserPacketReceived(livekit::Room &room,
 // ==================== LiveKitManager 实现 ====================
 
 LiveKitManager::LiveKitManager(QObject *parent)
-    : QObject(parent), m_networkManager(new QNetworkAccessManager(this)), m_room(std::make_unique<livekit::Room>()), m_delegate(std::make_unique<LiveKitRoomDelegate>()), m_serverUrl(Config::DEFAULT_LIVEKIT_SERVER), m_tokenServerUrl(Config::DEFAULT_TOKEN_SERVER), m_isConnected(false), m_isConnecting(false)
+    : QObject(parent), m_networkManager(new QNetworkAccessManager(this)), m_room(std::make_unique<livekit::Room>()), m_delegate(std::make_unique<LiveKitRoomDelegate>()), m_mediaCapture(std::make_unique<MediaCapture>(this)), m_serverUrl(Config::DEFAULT_LIVEKIT_SERVER), m_tokenServerUrl(Config::DEFAULT_TOKEN_SERVER), m_isConnected(false), m_isConnecting(false)
 {
     // 初始化 LiveKit SDK（只需要一次）
     if (!s_sdkInitialized)
@@ -209,6 +210,10 @@ QString LiveKitManager::currentUser() const { return m_currentUser; }
 QString LiveKitManager::serverUrl() const { return m_serverUrl; }
 QString LiveKitManager::tokenServerUrl() const { return m_tokenServerUrl; }
 QString LiveKitManager::errorMessage() const { return m_errorMessage; }
+
+bool LiveKitManager::isCameraPublished() const { return m_cameraPublished; }
+bool LiveKitManager::isMicrophonePublished() const { return m_microphonePublished; }
+MediaCapture *LiveKitManager::mediaCapture() const { return m_mediaCapture.get(); }
 
 // ==================== 属性 Setter ====================
 
@@ -468,4 +473,224 @@ void LiveKitManager::setError(const QString &error)
     m_errorMessage = error;
     emit errorOccurred(error);
     qWarning() << "[LiveKitManager] 错误:" << error;
+}
+
+// ==================== 本地媒体控制 ====================
+
+void LiveKitManager::startLocalCamera()
+{
+    if (m_mediaCapture)
+    {
+        m_mediaCapture->startCamera();
+    }
+}
+
+void LiveKitManager::stopLocalCamera()
+{
+    if (m_mediaCapture)
+    {
+        m_mediaCapture->stopCamera();
+    }
+}
+
+void LiveKitManager::startLocalMicrophone()
+{
+    if (m_mediaCapture)
+    {
+        m_mediaCapture->startMicrophone();
+    }
+}
+
+void LiveKitManager::stopLocalMicrophone()
+{
+    if (m_mediaCapture)
+    {
+        m_mediaCapture->stopMicrophone();
+    }
+}
+
+// ==================== 轨道发布控制 ====================
+
+void LiveKitManager::publishCamera()
+{
+    if (!m_isConnected)
+    {
+        setError("未连接到房间，无法发布摄像头");
+        return;
+    }
+
+    if (m_cameraPublished)
+    {
+        qDebug() << "[LiveKitManager] 摄像头已发布";
+        return;
+    }
+
+    // 确保摄像头已启动
+    if (!m_mediaCapture->isCameraActive())
+    {
+        m_mediaCapture->startCamera();
+    }
+
+    auto *localParticipant = m_room->localParticipant();
+    if (!localParticipant)
+    {
+        setError("无法获取本地参会者");
+        return;
+    }
+
+    try
+    {
+        auto videoTrack = m_mediaCapture->getVideoTrack();
+        if (!videoTrack)
+        {
+            setError("视频轨道未创建");
+            return;
+        }
+
+        // 设置发布选项
+        livekit::TrackPublishOptions options;
+        options.source = livekit::TrackSource::SOURCE_CAMERA;
+
+        // 发布轨道
+        m_videoPublication = localParticipant->publishTrack(
+            std::static_pointer_cast<livekit::Track>(videoTrack),
+            options);
+
+        m_cameraPublished = true;
+        emit cameraPublishedChanged();
+        qDebug() << "[LiveKitManager] 摄像头轨道已发布";
+    }
+    catch (const std::exception &e)
+    {
+        setError(QString("发布摄像头失败: %1").arg(e.what()));
+    }
+}
+
+void LiveKitManager::unpublishCamera()
+{
+    if (!m_isConnected || !m_cameraPublished)
+    {
+        return;
+    }
+
+    auto *localParticipant = m_room->localParticipant();
+    if (localParticipant && m_videoPublication)
+    {
+        try
+        {
+            localParticipant->unpublishTrack(m_videoPublication->sid());
+            m_videoPublication.reset();
+            m_cameraPublished = false;
+            emit cameraPublishedChanged();
+            qDebug() << "[LiveKitManager] 摄像头轨道已取消发布";
+        }
+        catch (const std::exception &e)
+        {
+            qWarning() << "[LiveKitManager] 取消发布摄像头失败:" << e.what();
+        }
+    }
+}
+
+void LiveKitManager::toggleCamera()
+{
+    if (m_cameraPublished)
+    {
+        unpublishCamera();
+    }
+    else
+    {
+        publishCamera();
+    }
+}
+
+void LiveKitManager::publishMicrophone()
+{
+    if (!m_isConnected)
+    {
+        setError("未连接到房间，无法发布麦克风");
+        return;
+    }
+
+    if (m_microphonePublished)
+    {
+        qDebug() << "[LiveKitManager] 麦克风已发布";
+        return;
+    }
+
+    // 确保麦克风已启动
+    if (!m_mediaCapture->isMicrophoneActive())
+    {
+        m_mediaCapture->startMicrophone();
+    }
+
+    auto *localParticipant = m_room->localParticipant();
+    if (!localParticipant)
+    {
+        setError("无法获取本地参会者");
+        return;
+    }
+
+    try
+    {
+        auto audioTrack = m_mediaCapture->getAudioTrack();
+        if (!audioTrack)
+        {
+            setError("音频轨道未创建");
+            return;
+        }
+
+        // 设置发布选项
+        livekit::TrackPublishOptions options;
+        options.source = livekit::TrackSource::SOURCE_MICROPHONE;
+
+        // 发布轨道
+        m_audioPublication = localParticipant->publishTrack(
+            std::static_pointer_cast<livekit::Track>(audioTrack),
+            options);
+
+        m_microphonePublished = true;
+        emit microphonePublishedChanged();
+        qDebug() << "[LiveKitManager] 麦克风轨道已发布";
+    }
+    catch (const std::exception &e)
+    {
+        setError(QString("发布麦克风失败: %1").arg(e.what()));
+    }
+}
+
+void LiveKitManager::unpublishMicrophone()
+{
+    if (!m_isConnected || !m_microphonePublished)
+    {
+        return;
+    }
+
+    auto *localParticipant = m_room->localParticipant();
+    if (localParticipant && m_audioPublication)
+    {
+        try
+        {
+            localParticipant->unpublishTrack(m_audioPublication->sid());
+            m_audioPublication.reset();
+            m_microphonePublished = false;
+            emit microphonePublishedChanged();
+            qDebug() << "[LiveKitManager] 麦克风轨道已取消发布";
+        }
+        catch (const std::exception &e)
+        {
+            qWarning() << "[LiveKitManager] 取消发布麦克风失败:" << e.what();
+        }
+    }
+}
+
+void LiveKitManager::toggleMicrophone()
+{
+    if (m_microphonePublished)
+    {
+        unpublishMicrophone();
+    }
+    else
+    {
+        publishMicrophone();
+    }
 }

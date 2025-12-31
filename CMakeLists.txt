@@ -28,6 +28,8 @@ set(PROJECT_SOURCES
     src/chatmodel.h
     src/livekitmanager.cpp
     src/livekitmanager.h
+    src/mediacapture.cpp
+    src/mediacapture.h
 )
 
 # QML资源文件
