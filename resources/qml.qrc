@@ -1,0 +1,20 @@
+<RCC>
+    <qresource prefix="/">
+        <file>qml/main.qml</file>
+        <file>qml/pages/LoginPage.qml</file>
+        <file>qml/pages/RegisterPage.qml</file>
+        <file>qml/pages/HomePage.qml</file>
+        <file>qml/pages/MeetingRoom.qml</file>
+        <file>qml/components/ControlBar.qml</file>
+        <file>qml/components/VideoGrid.qml</file>
+        <file>qml/components/VideoItem.qml</file>
+        <file>qml/components/ParticipantPanel.qml</file>
+        <file>qml/components/ChatPanel.qml</file>
+        <file>qml/components/MeetingButton.qml</file>
+        <file>qml/components/TopBar.qml</file>
+        <file>qml/dialogs/JoinMeetingDialog.qml</file>
+        <file>qml/dialogs/CreateMeetingDialog.qml</file>
+        <file>qml/dialogs/SettingsDialog.qml</file>
+        <file>qml/styles/Theme.qml</file>
+    </qresource>
+</RCC>
