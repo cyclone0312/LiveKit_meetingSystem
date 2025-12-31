@@ -5,6 +5,9 @@
 #include <QString>
 #include <QVariantList>
 
+// 前向声明
+class LiveKitManager;
+
 class MeetingController : public QObject
 {
     Q_OBJECT
@@ -22,6 +25,10 @@ class MeetingController : public QObject
     Q_PROPERTY(int participantCount READ participantCount NOTIFY participantCountChanged)
     Q_PROPERTY(QString meetingDuration READ meetingDuration NOTIFY meetingDurationChanged)
 
+    // 新增：连接状态属性
+    Q_PROPERTY(bool isConnecting READ isConnecting NOTIFY connectingChanged)
+    Q_PROPERTY(bool isConnected READ isConnected NOTIFY connectedChanged)
+
 public:
     explicit MeetingController(QObject *parent = nullptr);
     ~MeetingController();
@@ -38,6 +45,13 @@ public:
     QString meetingTitle() const;
     int participantCount() const;
     QString meetingDuration() const;
+
+    // 新增：连接状态 Getter
+    bool isConnecting() const;
+    bool isConnected() const;
+
+    // 获取 LiveKitManager 指针（供外部使用）
+    LiveKitManager *liveKitManager() const;
 
     // Setter方法
     void setMicOn(bool on);
@@ -87,6 +101,10 @@ signals:
     void participantCountChanged();
     void meetingDurationChanged();
 
+    // 新增：连接状态信号
+    void connectingChanged();
+    void connectedChanged();
+
     // 事件信号
     void meetingCreated(const QString &meetingId);
     void meetingJoined();
@@ -97,10 +115,17 @@ signals:
     void errorOccurred(const QString &error);
     void showMessage(const QString &message);
 
+private slots:
+    // LiveKit 事件处理槽
+    void onLiveKitConnected();
+    void onLiveKitDisconnected();
+    void onLiveKitError(const QString &error);
+
 private:
     void updateMeetingDuration();
     void startDurationTimer();
     void stopDurationTimer();
+    void setupLiveKitConnections(); // 新增：设置 LiveKit 信号连接
 
 private:
     bool m_isMicOn;
@@ -115,6 +140,9 @@ private:
     int m_participantCount;
     int m_meetingSeconds;
     class QTimer *m_durationTimer;
+
+    // 新增：LiveKit 管理器
+    LiveKitManager *m_liveKitManager;
 };
 
 #endif // MEETINGCONTROLLER_H

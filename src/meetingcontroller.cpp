@@ -1,4 +1,5 @@
 #include "meetingcontroller.h"
+#include "livekitmanager.h"
 #include <QTimer>
 #include <QRandomGenerator>
 #include <QClipboard>
@@ -6,9 +7,14 @@
 #include <QDebug>
 
 MeetingController::MeetingController(QObject *parent)
-    : QObject(parent), m_isMicOn(false), m_isCameraOn(false), m_isScreenSharing(false), m_isRecording(false), m_isHandRaised(false), m_isInMeeting(false), m_participantCount(0), m_meetingSeconds(0), m_durationTimer(new QTimer(this))
+    : QObject(parent), m_isMicOn(false), m_isCameraOn(false), m_isScreenSharing(false), m_isRecording(false), m_isHandRaised(false), m_isInMeeting(false), m_participantCount(0), m_meetingSeconds(0), m_durationTimer(new QTimer(this)), m_liveKitManager(new LiveKitManager(this)) // 创建 LiveKit 管理器
 {
     connect(m_durationTimer, &QTimer::timeout, this, &MeetingController::updateMeetingDuration);
+
+    // 设置 LiveKit 信号连接
+    setupLiveKitConnections();
+
+    qDebug() << "[MeetingController] 初始化完成，LiveKit 管理器已创建";
 }
 
 MeetingController::~MeetingController()
@@ -30,6 +36,13 @@ QString MeetingController::meetingId() const { return m_meetingId; }
 QString MeetingController::userName() const { return m_userName; }
 QString MeetingController::meetingTitle() const { return m_meetingTitle; }
 int MeetingController::participantCount() const { return m_participantCount; }
+
+// 新增：连接状态 Getter
+bool MeetingController::isConnecting() const { return m_liveKitManager->isConnecting(); }
+bool MeetingController::isConnected() const { return m_liveKitManager->isConnected(); }
+
+// 获取 LiveKitManager 指针
+LiveKitManager *MeetingController::liveKitManager() const { return m_liveKitManager; }
 
 QString MeetingController::meetingDuration() const
 {
@@ -148,24 +161,25 @@ void MeetingController::setMeetingTitle(const QString &title)
 // 会议控制实现
 void MeetingController::createMeeting(const QString &title)
 {
-    // 生成随机会议ID
+    qDebug() << "[MeetingController] 创建会议:" << title;
+
+    // 生成随机会议ID（作为房间名）
     QString newMeetingId = QString::number(QRandomGenerator::global()->bounded(100000000, 999999999));
 
     setMeetingId(newMeetingId);
     setMeetingTitle(title.isEmpty() ? m_userName + "的会议" : title);
-    setInMeeting(true);
 
-    // 模拟添加自己作为参会者
-    m_participantCount = 1;
-    emit participantCountChanged();
+    // 通过 LiveKit 加入房间
+    m_liveKitManager->joinRoom(newMeetingId, m_userName);
 
-    emit meetingCreated(m_meetingId);
-    emit showMessage("会议已创建，会议号：" + m_meetingId);
+    emit showMessage("正在创建会议...");
 }
 
 void MeetingController::joinMeeting(const QString &meetingId, const QString &password)
 {
     Q_UNUSED(password)
+
+    qDebug() << "[MeetingController] 加入会议:" << meetingId;
 
     if (meetingId.isEmpty())
     {
@@ -175,18 +189,20 @@ void MeetingController::joinMeeting(const QString &meetingId, const QString &pas
 
     setMeetingId(meetingId);
     setMeetingTitle("会议 " + meetingId);
-    setInMeeting(true);
 
-    // 模拟参会者数量
-    m_participantCount = QRandomGenerator::global()->bounded(2, 10);
-    emit participantCountChanged();
+    // 通过 LiveKit 加入房间
+    m_liveKitManager->joinRoom(meetingId, m_userName);
 
-    emit meetingJoined();
-    emit showMessage("已加入会议");
+    emit showMessage("正在加入会议...");
 }
 
 void MeetingController::leaveMeeting()
 {
+    qDebug() << "[MeetingController] 离开会议";
+
+    // 先离开 LiveKit 房间
+    m_liveKitManager->leaveRoom();
+
     setInMeeting(false);
     setMicOn(false);
     setCameraOn(false);
@@ -310,4 +326,74 @@ void MeetingController::stopDurationTimer()
 {
     m_durationTimer->stop();
     m_meetingSeconds = 0;
+}
+
+// ==================== LiveKit 信号连接设置 ====================
+
+void MeetingController::setupLiveKitConnections()
+{
+    // 连接状态变化
+    connect(m_liveKitManager, &LiveKitManager::connectionStateChanged, this, [this]()
+            {
+        emit connectingChanged();
+        emit connectedChanged(); });
+
+    // 连接成功
+    connect(m_liveKitManager, &LiveKitManager::connected,
+            this, &MeetingController::onLiveKitConnected);
+
+    // 断开连接
+    connect(m_liveKitManager, &LiveKitManager::disconnected,
+            this, &MeetingController::onLiveKitDisconnected);
+
+    // 错误处理
+    connect(m_liveKitManager, &LiveKitManager::errorOccurred,
+            this, &MeetingController::onLiveKitError);
+
+    qDebug() << "[MeetingController] LiveKit 信号连接已设置";
+}
+
+// ==================== LiveKit 事件处理槽 ====================
+
+void MeetingController::onLiveKitConnected()
+{
+    qDebug() << "[MeetingController] LiveKit 连接成功，进入会议";
+
+    setInMeeting(true);
+
+    // 初始化参会者数量
+    m_participantCount = 1;
+    emit participantCountChanged();
+
+    // 发送相应的信号
+    if (m_meetingTitle.contains("的会议"))
+    {
+        // 这是创建的会议
+        emit meetingCreated(m_meetingId);
+        emit showMessage("会议已创建，会议号：" + m_meetingId);
+    }
+    else
+    {
+        // 这是加入的会议
+        emit meetingJoined();
+        emit showMessage("已成功加入会议");
+    }
+}
+
+void MeetingController::onLiveKitDisconnected()
+{
+    qDebug() << "[MeetingController] LiveKit 连接断开";
+
+    if (m_isInMeeting)
+    {
+        setInMeeting(false);
+        emit showMessage("与服务器的连接已断开");
+    }
+}
+
+void MeetingController::onLiveKitError(const QString &error)
+{
+    qWarning() << "[MeetingController] LiveKit 错误:" << error;
+    emit errorOccurred(error);
+    emit showMessage("连接错误: " + error);
 }
