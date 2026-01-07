@@ -28,6 +28,12 @@
 // 媒体采集（需要完整定义，因为 Q_PROPERTY 使用了 MediaCapture*）
 #include "mediacapture.h"
 
+// 远程媒体渲染
+#include "remotevideorenderer.h"
+#include "remoteaudioplayer.h"
+
+#include <QMap>
+
 // 前向声明
 class LiveKitManager;
 
@@ -162,6 +168,13 @@ public slots:
     void unpublishMicrophone();
     void toggleMicrophone();
 
+    /**
+     * @brief 设置远程参会者的视频 Sink（供 QML 调用）
+     * @param participantId 参会者 ID
+     * @param sink QML VideoOutput 的 videoSink
+     */
+    Q_INVOKABLE void setRemoteVideoSink(const QString &participantId, QVideoSink *sink);
+
 private:
     /**
      * @brief 实际执行视频轨道发布（内部方法）
@@ -221,6 +234,10 @@ signals:
     void tokenReceived(const QString &token);
     void tokenRequestFailed(const QString &reason);
 
+    // 远程媒体信号
+    void remoteVideoSinkReady(const QString &participantId, QVideoSink *sink);
+    void remoteVideoSinkRemoved(const QString &participantId);
+
 private:
     void requestToken(const QString &roomName, const QString &userName);
     void connectToRoom(const QString &token);
@@ -263,6 +280,10 @@ private:
 
     // SDK 初始化标志
     static bool s_sdkInitialized;
+
+    // 远程媒体渲染器
+    QMap<QString, std::shared_ptr<RemoteVideoRenderer>> m_remoteVideoRenderers;
+    QMap<QString, std::shared_ptr<RemoteAudioPlayer>> m_remoteAudioPlayers;
 };
 
 #endif // LIVEKITMANAGER_H

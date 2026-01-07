@@ -50,6 +50,42 @@ ApplicationWindow {
         }
     }
     
+    // 监听 LiveKitManager 的参会者加入/离开事件
+    Connections {
+        target: liveKitManager
+        
+        function onParticipantJoined(identity, name) {
+            console.log("[main.qml] 远程参会者加入:", identity, name)
+            participantModel.addParticipant(identity, name, false, false)
+        }
+        
+        function onParticipantLeft(identity) {
+            console.log("[main.qml] 远程参会者离开:", identity)
+            participantModel.removeParticipant(identity)
+        }
+        
+        function onConnected() {
+            console.log("[main.qml] LiveKit 连接成功，添加本地用户")
+            // 添加本地用户到参会者列表
+            participantModel.addParticipant("self", meetingController.userName, true, true)
+        }
+        
+        function onDisconnected() {
+            console.log("[main.qml] LiveKit 断开连接，清空参会者列表")
+            participantModel.clear()
+        }
+        
+        function onRemoteVideoSinkReady(participantId, sink) {
+            console.log("[main.qml] 远程视频 Sink 就绪:", participantId, sink)
+            participantModel.setParticipantVideoSink(participantId, sink)
+        }
+        
+        function onRemoteVideoSinkRemoved(participantId) {
+            console.log("[main.qml] 远程视频 Sink 移除:", participantId)
+            participantModel.setParticipantVideoSink(participantId, null)
+        }
+    }
+    
     // 页面堆栈
     StackView {
         id: stackView
@@ -128,12 +164,10 @@ ApplicationWindow {
         HomePage {
             onJoinMeeting: function(meetingId) {
                 meetingController.joinMeeting(meetingId)
-                participantModel.addDemoParticipants()
                 stackView.push(meetingRoomPage)
             }
             onCreateMeeting: function(title) {
                 meetingController.createMeeting(title)
-                participantModel.addDemoParticipants()
                 stackView.push(meetingRoomPage)
             }
             onLogout: {
@@ -161,7 +195,6 @@ ApplicationWindow {
         onAccepted: {
             if (meetingId.length > 0) {
                 meetingController.joinMeeting(meetingId)
-                participantModel.addDemoParticipants()
                 stackView.push(meetingRoomPage)
             }
         }
@@ -171,7 +204,6 @@ ApplicationWindow {
         id: createMeetingDialog
         onAccepted: {
             meetingController.createMeeting(meetingTitle)
-            participantModel.addDemoParticipants()
             stackView.push(meetingRoomPage)
         }
     }

@@ -58,11 +58,40 @@ void LiveKitRoomDelegate::onTrackSubscribed(livekit::Room &room,
     Q_UNUSED(room)
     if (manager)
     {
+        // 保存 manager 到本地变量，以便在 lambda 中捕获
+        LiveKitManager *mgr = manager;
+        
         QString identity = QString::fromStdString(event.participant->identity());
         QString trackSid = QString::fromStdString(event.track->sid());
-        int kind = static_cast<int>(event.track->kind());
-        qDebug() << "[LiveKit] 轨道订阅:" << identity << trackSid << "kind:" << kind;
-        emit manager->trackSubscribed(identity, trackSid, kind);
+        livekit::TrackKind kind = event.track->kind();
+        int kindInt = static_cast<int>(kind);
+        qDebug() << "[LiveKit] 轨道订阅:" << identity << trackSid << "kind:" << kindInt;
+        emit mgr->trackSubscribed(identity, trackSid, kindInt);
+
+        // 根据轨道类型创建相应的渲染器/播放器
+        if (kind == livekit::TrackKind::KIND_VIDEO)
+        {
+            // 创建远程视频渲染器
+            qDebug() << "[LiveKit] 创建远程视频渲染器:" << identity;
+            auto renderer = std::make_shared<RemoteVideoRenderer>(event.track);
+            renderer->setParticipantId(identity);
+            renderer->start();
+
+            mgr->m_remoteVideoRenderers[identity] = renderer;
+
+            // 注意：VideoSink 现在由 QML 通过 setRemoteVideoSink() 回调设置
+            // QML 的 VideoOutput 创建后会调用 liveKitManager.setRemoteVideoSink()
+        }
+        else if (kind == livekit::TrackKind::KIND_AUDIO)
+        {
+            // 创建远程音频播放器
+            qDebug() << "[LiveKit] 创建远程音频播放器:" << identity;
+            auto player = std::make_shared<RemoteAudioPlayer>(event.track);
+            player->setParticipantId(identity);
+            player->start();
+
+            mgr->m_remoteAudioPlayers[identity] = player;
+        }
     }
 }
 
@@ -72,10 +101,44 @@ void LiveKitRoomDelegate::onTrackUnsubscribed(livekit::Room &room,
     Q_UNUSED(room)
     if (manager && event.participant && event.track)
     {
+        // 保存 manager 到本地变量，以便在 lambda 中捕获
+        LiveKitManager *mgr = manager;
+        
         QString identity = QString::fromStdString(event.participant->identity());
         QString trackSid = QString::fromStdString(event.track->sid());
+        livekit::TrackKind kind = event.track->kind();
         qDebug() << "[LiveKit] 轨道取消订阅:" << identity << trackSid;
-        emit manager->trackUnsubscribed(identity, trackSid);
+        emit mgr->trackUnsubscribed(identity, trackSid);
+
+        // 清理对应的渲染器/播放器
+        if (kind == livekit::TrackKind::KIND_VIDEO)
+        {
+            if (mgr->m_remoteVideoRenderers.contains(identity))
+            {
+                qDebug() << "[LiveKit] 停止并移除远程视频渲染器:" << identity;
+                auto renderer = mgr->m_remoteVideoRenderers.take(identity);
+                if (renderer)
+                {
+                    renderer->stop();
+                }
+                // 通知 QML 视频 Sink 已移除
+                QMetaObject::invokeMethod(mgr, [mgr, identity]() {
+                    emit mgr->remoteVideoSinkRemoved(identity);
+                }, Qt::QueuedConnection);
+            }
+        }
+        else if (kind == livekit::TrackKind::KIND_AUDIO)
+        {
+            if (mgr->m_remoteAudioPlayers.contains(identity))
+            {
+                qDebug() << "[LiveKit] 停止并移除远程音频播放器:" << identity;
+                auto player = mgr->m_remoteAudioPlayers.take(identity);
+                if (player)
+                {
+                    player->stop();
+                }
+            }
+        }
     }
 }
 
@@ -306,6 +369,27 @@ void LiveKitManager::leaveRoom()
     m_microphonePublished = false;
     emit cameraPublishedChanged();
     emit microphonePublishedChanged();
+
+    // 停止并清除所有远程渲染器
+    qDebug() << "[LiveKitManager] 停止所有远程视频渲染器:" << m_remoteVideoRenderers.count();
+    for (auto &renderer : m_remoteVideoRenderers)
+    {
+        if (renderer)
+        {
+            renderer->stop();
+        }
+    }
+    m_remoteVideoRenderers.clear();
+
+    qDebug() << "[LiveKitManager] 停止所有远程音频播放器:" << m_remoteAudioPlayers.count();
+    for (auto &player : m_remoteAudioPlayers)
+    {
+        if (player)
+        {
+            player->stop();
+        }
+    }
+    m_remoteAudioPlayers.clear();
 
     // 【重要】在销毁旧 Room 之前，先移除 delegate
     // 避免销毁过程中触发回调导致崩溃
@@ -819,5 +903,23 @@ void LiveKitManager::toggleMicrophone()
     else
     {
         publishMicrophone();
+    }
+}
+
+void LiveKitManager::setRemoteVideoSink(const QString &participantId, QVideoSink *sink)
+{
+    qDebug() << "[LiveKitManager] setRemoteVideoSink:" << participantId << "sink=" << sink;
+    
+    if (m_remoteVideoRenderers.contains(participantId))
+    {
+        auto renderer = m_remoteVideoRenderers[participantId];
+        if (renderer)
+        {
+            renderer->setExternalVideoSink(sink);
+        }
+    }
+    else
+    {
+        qDebug() << "[LiveKitManager] 参会者渲染器不存在:" << participantId;
     }
 }

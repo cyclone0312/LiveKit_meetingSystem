@@ -4,6 +4,7 @@
 #include <QAbstractListModel>
 #include <QList>
 #include <QString>
+#include <QVideoSink>
 
 struct Participant
 {
@@ -15,7 +16,8 @@ struct Participant
     bool isScreenSharing;
     bool isHost;
     bool isHandRaised;
-    bool isLocal; // 是否为本地用户
+    bool isLocal;           // 是否为本地用户
+    QVideoSink *videoSink;  // 远程视频 Sink（本地用户为 nullptr）
 };
 
 class ParticipantModel : public QAbstractListModel
@@ -34,7 +36,8 @@ public:
         IsScreenSharingRole,
         IsHostRole,
         IsHandRaisedRole,
-        IsLocalRole // 新增：本地用户角色
+        IsLocalRole,    // 本地用户角色
+        VideoSinkRole   // 远程视频 Sink 角色
     };
 
     explicit ParticipantModel(QObject *parent = nullptr);
@@ -52,6 +55,7 @@ public slots:
     void updateParticipant(const QString &id, bool isMicOn, bool isCameraOn);
     void setParticipantHandRaised(const QString &id, bool raised);
     void setParticipantScreenSharing(const QString &id, bool sharing);
+    void setParticipantVideoSink(const QString &id, QVideoSink *sink);
     void clear();
 
     // 添加模拟参会者

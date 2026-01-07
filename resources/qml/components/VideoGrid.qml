@@ -62,6 +62,7 @@ Item {
             width: gridView.cellWidth - 8
             height: gridView.cellHeight - 8
             
+            participantId: model.participantId  // 传递参会者 ID
             participantName: model.name
             isMicOn: model.isLocal ? meetingController.isMicOn : model.isMicOn
             isCameraOn: model.isLocal ? meetingController.isCameraOn : model.isCameraOn

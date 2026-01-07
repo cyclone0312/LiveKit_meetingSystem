@@ -30,6 +30,10 @@ set(PROJECT_SOURCES
     src/livekitmanager.h
     src/mediacapture.cpp
     src/mediacapture.h
+    src/remotevideorenderer.cpp
+    src/remotevideorenderer.h
+    src/remoteaudioplayer.cpp
+    src/remoteaudioplayer.h
 )
 
 # QML资源文件

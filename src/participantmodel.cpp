@@ -40,6 +40,8 @@ QVariant ParticipantModel::data(const QModelIndex &index, int role) const
         return participant.isHandRaised;
     case IsLocalRole:
         return participant.isLocal;
+    case VideoSinkRole:
+        return QVariant::fromValue(participant.videoSink);
     default:
         return QVariant();
     }
@@ -57,6 +59,7 @@ QHash<int, QByteArray> ParticipantModel::roleNames() const
     roles[IsHostRole] = "isHost";
     roles[IsHandRaisedRole] = "isHandRaised";
     roles[IsLocalRole] = "isLocal";
+    roles[VideoSinkRole] = "videoSink";
     return roles;
 }
 
@@ -83,6 +86,7 @@ void ParticipantModel::addParticipant(const QString &id, const QString &name, bo
     participant.isHost = isHost;
     participant.isHandRaised = false;
     participant.isLocal = isLocal;
+    participant.videoSink = nullptr;  // 远程视频 Sink 稍后通过 setParticipantVideoSink 设置
 
     m_participants.append(participant);
 
@@ -137,6 +141,22 @@ void ParticipantModel::setParticipantScreenSharing(const QString &id, bool shari
 
     QModelIndex modelIndex = createIndex(index, 0);
     emit dataChanged(modelIndex, modelIndex, {IsScreenSharingRole});
+}
+
+void ParticipantModel::setParticipantVideoSink(const QString &id, QVideoSink *sink)
+{
+    int index = findParticipantIndex(id);
+    if (index < 0)
+    {
+        qDebug() << "[ParticipantModel] setParticipantVideoSink: 参会者不存在:" << id;
+        return;
+    }
+
+    qDebug() << "[ParticipantModel] setParticipantVideoSink:" << id << "sink=" << sink;
+    m_participants[index].videoSink = sink;
+
+    QModelIndex modelIndex = createIndex(index, 0);
+    emit dataChanged(modelIndex, modelIndex, {VideoSinkRole});
 }
 
 void ParticipantModel::clear()

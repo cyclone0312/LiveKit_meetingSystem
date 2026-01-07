@@ -20,6 +20,7 @@ import QtMultimedia
 Rectangle {
     id: videoItem
     
+    property string participantId: ""  // 参会者 ID
     property string participantName: ""
     property bool isMicOn: false
     property bool isCameraOn: false
@@ -157,10 +158,29 @@ Rectangle {
                 }
             }
             
-            // 远程用户暂时显示占位符（待实现远程视频流）
-            Rectangle {
+            // 远程用户显示远程视频流
+            VideoOutput {
+                id: remoteVideoOutput
                 anchors.fill: parent
                 visible: !isLocalUser && isCameraOn
+                fillMode: VideoOutput.PreserveAspectCrop
+                
+                // 【关键】当 VideoOutput 创建完成后，将其内部 videoSink 传递给 RemoteVideoRenderer
+                // VideoOutput.videoSink 是只读的，我们需要让 RemoteVideoRenderer 写入它
+                Component.onCompleted: {
+                    console.log("[VideoItem] 远程 VideoOutput 初始化, participantId=", participantId, "participantName=", participantName)
+                    if (!isLocalUser && participantId !== "" && participantId !== "self" && remoteVideoOutput.videoSink) {
+                        console.log("[VideoItem] 传递 VideoSink 给 RemoteVideoRenderer:", participantId)
+                        liveKitManager.setRemoteVideoSink(participantId, remoteVideoOutput.videoSink)
+                    }
+                }
+            }
+            
+            // 远程用户占位符（当没有视频流时显示一个加载指示）
+            Rectangle {
+                id: remotePlaceholder
+                anchors.fill: parent
+                visible: !isLocalUser && !isCameraOn
                 gradient: Gradient {
                     GradientStop { position: 0.0; color: "#2D3748" }
                     GradientStop { position: 1.0; color: "#1A202C" }
@@ -168,7 +188,7 @@ Rectangle {
                 
                 Text {
                     anchors.centerIn: parent
-                    text: "📷"
+                    text: "👤"
                     font.pixelSize: 48
                     opacity: 0.3
                 }
