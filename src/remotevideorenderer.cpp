@@ -85,8 +85,10 @@ void RemoteVideoRenderer::stop()
 
 void RemoteVideoRenderer::renderLoop()
 {
-    qDebug() << "[RemoteVideoRenderer] 渲染循环开始";
+    qDebug() << "[RemoteVideoRenderer] 渲染循环开始, participantId=" << m_participantId;
 
+    int frameCount = 0;
+    
     while (m_running.load() && m_videoStream) {
         livekit::VideoFrameEvent event;
 
@@ -95,12 +97,22 @@ void RemoteVideoRenderer::renderLoop()
 
         if (!hasFrame) {
             // 流已结束或被关闭
-            qDebug() << "[RemoteVideoRenderer] 视频流结束";
+            qDebug() << "[RemoteVideoRenderer] 视频流结束, participantId=" << m_participantId;
             break;
         }
 
         if (!m_running.load()) {
             break;
+        }
+
+        frameCount++;
+        
+        // 每 100 帧打印一次日志
+        if (frameCount % 100 == 1) {
+            qDebug() << "[RemoteVideoRenderer] 收到远程帧 #" << frameCount 
+                     << "participantId=" << m_participantId
+                     << "尺寸=" << event.frame.width() << "x" << event.frame.height()
+                     << "sink=" << (m_externalSink ? "已设置" : "未设置");
         }
 
         // 转换并显示帧
@@ -109,38 +121,43 @@ void RemoteVideoRenderer::renderLoop()
             QMutexLocker locker(&m_mutex);
             if (m_externalSink) {
                 m_externalSink->setVideoFrame(qtFrame);
+            } else if (frameCount % 100 == 1) {
+                qWarning() << "[RemoteVideoRenderer] 没有 sink，无法显示帧! participantId=" << m_participantId;
             }
+        } else if (frameCount % 100 == 1) {
+            qWarning() << "[RemoteVideoRenderer] 帧转换失败! participantId=" << m_participantId;
         }
     }
 
-    qDebug() << "[RemoteVideoRenderer] 渲染循环结束";
+    qDebug() << "[RemoteVideoRenderer] 渲染循环结束, 共处理" << frameCount << "帧, participantId=" << m_participantId;
 }
 
 QVideoFrame RemoteVideoRenderer::convertFrame(const livekit::LKVideoFrame &lkFrame)
 {
     int width = lkFrame.width();
     int height = lkFrame.height();
-    const uint8_t *data = lkFrame.data();
-    size_t dataSize = lkFrame.dataSize();
 
-    if (width <= 0 || height <= 0 || !data || dataSize == 0) {
+    if (width <= 0 || height <= 0) {
         return QVideoFrame();
     }
 
-    // LiveKit 帧格式是 RGBA
-    // 创建 QImage 并复制数据
-    QImage image(width, height, QImage::Format_RGBA8888);
+    // 使用 SDK 的 convert 函数将 RGBA 转换为 BGRA（Qt 在 Windows 上的原生格式）
+    livekit::LKVideoFrame bgraFrame = lkFrame.convert(livekit::VideoBufferType::BGRA, false);
     
-    // 确保数据大小正确
-    size_t expectedSize = static_cast<size_t>(width * height * 4);
-    if (dataSize < expectedSize) {
-        qWarning() << "[RemoteVideoRenderer] 帧数据大小不匹配:" << dataSize << "vs" << expectedSize;
+    const uint8_t *data = bgraFrame.data();
+    size_t dataSize = bgraFrame.dataSize();
+    
+    if (!data || dataSize == 0) {
         return QVideoFrame();
     }
 
-    // 逐行复制（考虑行对齐）
+    // BGRA 对应 Qt 的 Format_ARGB32（Windows 小端字节序）
+    QImage image(width, height, QImage::Format_ARGB32);
+    
+    // 直接 memcpy（BGRA 和 ARGB32 在内存中布局相同）
+    size_t bytesPerLine = width * 4;
     for (int y = 0; y < height; ++y) {
-        memcpy(image.scanLine(y), data + y * width * 4, width * 4);
+        memcpy(image.scanLine(y), data + y * bytesPerLine, bytesPerLine);
     }
 
     // 转换为 QVideoFrame

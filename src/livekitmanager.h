@@ -284,6 +284,9 @@ private:
     // 远程媒体渲染器
     QMap<QString, std::shared_ptr<RemoteVideoRenderer>> m_remoteVideoRenderers;
     QMap<QString, std::shared_ptr<RemoteAudioPlayer>> m_remoteAudioPlayers;
+    
+    // 待处理的视频 Sink（当 QML 在渲染器创建前调用 setRemoteVideoSink 时暂存）
+    QMap<QString, QVideoSink*> m_pendingVideoSinks;
 };
 
 #endif // LIVEKITMANAGER_H

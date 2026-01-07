@@ -319,9 +319,7 @@ void MeetingController::toggleHandRaise()
 // 其他功能实现
 void MeetingController::inviteParticipants()
 {
-    QString inviteText = QString("加入会议\n会议主题：%1\n会议号：%2")
-                             .arg(m_meetingTitle)
-                             .arg(m_meetingId);
+    QString inviteText = QString("%1").arg(m_meetingId);
 
     QClipboard *clipboard = QGuiApplication::clipboard();
     clipboard->setText(inviteText);
@@ -441,6 +439,20 @@ void MeetingController::onLiveKitConnected()
         // 这是加入的会议
         emit meetingJoined();
         emit showMessage("已成功加入会议");
+    }
+    
+    // 【关键】连接成功后，根据用户入会前设置的状态来开启摄像头/麦克风
+    // 因为 setCameraOn/setMicOn 在未连接时不会发布轨道
+    if (m_isCameraOn)
+    {
+        qDebug() << "[MeetingController] 连接成功后自动开启摄像头";
+        m_liveKitManager->publishCamera();
+    }
+    
+    if (m_isMicOn)
+    {
+        qDebug() << "[MeetingController] 连接成功后自动开启麦克风";
+        m_liveKitManager->publishMicrophone();
     }
 }
 

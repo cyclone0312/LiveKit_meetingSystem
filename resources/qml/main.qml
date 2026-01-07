@@ -65,9 +65,15 @@ ApplicationWindow {
         }
         
         function onConnected() {
-            console.log("[main.qml] LiveKit 连接成功，添加本地用户")
+            console.log("[main.qml] LiveKit 连接成功，添加本地用户并进入会议室")
             // 添加本地用户到参会者列表
             participantModel.addParticipant("self", meetingController.userName, true, true)
+            
+            // 【关键】连接成功后才跳转到会议室页面
+            // 检查当前页面，避免重复跳转
+            if (stackView.currentItem !== meetingRoomPage) {
+                stackView.push(meetingRoomPage)
+            }
         }
         
         function onDisconnected() {
@@ -95,8 +101,10 @@ ApplicationWindow {
         initialItem: homePage
         
         // 开发阶段：设置默认用户名（跳过登录时使用）
+        // 【注意】每个实例需要唯一的用户名，否则 LiveKit 会踢出同名用户
         Component.onCompleted: {
-            meetingController.userName = "开发测试用户"
+            var randomSuffix = Math.floor(Math.random() * 1000)
+            meetingController.userName = "测试用户_" + randomSuffix
         }
         
         // 过渡动画
@@ -163,12 +171,16 @@ ApplicationWindow {
         id: homePage
         HomePage {
             onJoinMeeting: function(meetingId) {
+                // 显示加载对话框
+                connectionLoadingDialog.open()
+                // 调用 joinMeeting，页面跳转在 onConnected 中处理
                 meetingController.joinMeeting(meetingId)
-                stackView.push(meetingRoomPage)
             }
             onCreateMeeting: function(title) {
+                // 显示加载对话框
+                connectionLoadingDialog.open()
+                // 调用 createMeeting，页面跳转在 onConnected 中处理
                 meetingController.createMeeting(title)
-                stackView.push(meetingRoomPage)
             }
             onLogout: {
                 meetingController.logout()
@@ -194,8 +206,10 @@ ApplicationWindow {
         id: joinMeetingDialog
         onAccepted: {
             if (meetingId.length > 0) {
+                // 显示加载对话框
+                connectionLoadingDialog.open()
+                // 调用 joinMeeting，页面跳转在 onConnected 中处理
                 meetingController.joinMeeting(meetingId)
-                stackView.push(meetingRoomPage)
             }
         }
     }
@@ -203,13 +217,20 @@ ApplicationWindow {
     CreateMeetingDialog {
         id: createMeetingDialog
         onAccepted: {
+            // 显示加载对话框
+            connectionLoadingDialog.open()
+            // 调用 createMeeting，页面跳转在 onConnected 中处理
             meetingController.createMeeting(meetingTitle)
-            stackView.push(meetingRoomPage)
         }
     }
     
     SettingsDialog {
         id: settingsDialog
+    }
+    
+    // 连接等待对话框
+    ConnectionLoadingDialog {
+        id: connectionLoadingDialog
     }
     
     // 消息提示

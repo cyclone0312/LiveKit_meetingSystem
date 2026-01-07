@@ -79,8 +79,13 @@ void LiveKitRoomDelegate::onTrackSubscribed(livekit::Room &room,
 
             mgr->m_remoteVideoRenderers[identity] = renderer;
 
-            // 注意：VideoSink 现在由 QML 通过 setRemoteVideoSink() 回调设置
-            // QML 的 VideoOutput 创建后会调用 liveKitManager.setRemoteVideoSink()
+            // 【关键】检查是否有待处理的 VideoSink（QML 在渲染器创建前就设置了）
+            if (mgr->m_pendingVideoSinks.contains(identity))
+            {
+                QVideoSink *pendingSink = mgr->m_pendingVideoSinks.take(identity);
+                qDebug() << "[LiveKit] 应用待处理的 VideoSink:" << identity;
+                renderer->setExternalVideoSink(pendingSink);
+            }
         }
         else if (kind == livekit::TrackKind::KIND_AUDIO)
         {
@@ -620,6 +625,30 @@ void LiveKitManager::connectToRoom(const QString &token)
                 emit currentRoomChanged();
                 emit currentUserChanged();
                 emit connected();
+                
+                // 【关键】连接成功后，遍历已存在的远程参会者并发送信号
+                // 这样后加入的用户也能看到已经在房间里的参会者
+                if (m_room)
+                {
+                    auto existingParticipants = m_room->remoteParticipants();
+                    qDebug() << "[LiveKitManager] 已有远程参会者数量:" << existingParticipants.size();
+                    
+                    for (const auto& participant : existingParticipants)
+                    {
+                        if (participant)
+                        {
+                            QString identity = QString::fromStdString(participant->identity());
+                            QString name = QString::fromStdString(participant->name());
+                            if (name.isEmpty()) name = identity;
+                            
+                            qDebug() << "[LiveKitManager] 发现已有参会者:" << identity << name;
+                            emit participantJoined(identity, name);
+                            
+                            // TODO: 如果已有参会者有视频轨道，也需要创建渲染器
+                            // 这需要遍历 participant 的 trackPublications
+                        }
+                    }
+                }
             }
             else
             {
@@ -912,6 +941,7 @@ void LiveKitManager::setRemoteVideoSink(const QString &participantId, QVideoSink
     
     if (m_remoteVideoRenderers.contains(participantId))
     {
+        // 渲染器已存在，直接绑定
         auto renderer = m_remoteVideoRenderers[participantId];
         if (renderer)
         {
@@ -920,6 +950,9 @@ void LiveKitManager::setRemoteVideoSink(const QString &participantId, QVideoSink
     }
     else
     {
-        qDebug() << "[LiveKitManager] 参会者渲染器不存在:" << participantId;
+        // 渲染器还不存在，暂存 sink，等渲染器创建时再绑定
+        qDebug() << "[LiveKitManager] 渲染器尚不存在，暂存 sink:" << participantId;
+        m_pendingVideoSinks[participantId] = sink;
     }
 }
+

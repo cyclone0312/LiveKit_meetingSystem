@@ -203,9 +203,9 @@ Dialog {
                 }
                 
                 onClicked: {
-                    // 设置初始状态
-                    meetingController.setMicOn(!muteOnJoinCheck.checked)
-                    meetingController.setCameraOn(!cameraOffCheck.checked)
+                    // 设置初始状态（通过属性赋值，而非调用 setter 方法）
+                    meetingController.isMicOn = !muteOnJoinCheck.checked
+                    meetingController.isCameraOn = !cameraOffCheck.checked
                     joinMeetingDialog.accept()
                 }
             }
