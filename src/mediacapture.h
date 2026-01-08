@@ -235,7 +235,7 @@ private:
 
     // 音频参数
     static const int AUDIO_SAMPLE_RATE = 48000;
-    static const int AUDIO_CHANNELS = 1;
+    static const int AUDIO_CHANNELS = 2; // 大多数麦克风是双声道
 };
 
 #endif // MEDIACAPTURE_H

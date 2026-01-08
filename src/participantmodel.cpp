@@ -1,5 +1,6 @@
 #include "participantmodel.h"
 #include <QRandomGenerator>
+#include <QDebug>
 
 ParticipantModel::ParticipantModel(QObject *parent)
     : QAbstractListModel(parent)
@@ -86,7 +87,7 @@ void ParticipantModel::addParticipant(const QString &id, const QString &name, bo
     participant.isHost = isHost;
     participant.isHandRaised = false;
     participant.isLocal = isLocal;
-    participant.videoSink = nullptr;  // 远程视频 Sink 稍后通过 setParticipantVideoSink 设置
+    participant.videoSink = nullptr; // 远程视频 Sink 稍后通过 setParticipantVideoSink 设置
 
     m_participants.append(participant);
 
@@ -117,6 +118,22 @@ void ParticipantModel::updateParticipant(const QString &id, bool isMicOn, bool i
 
     QModelIndex modelIndex = createIndex(index, 0);
     emit dataChanged(modelIndex, modelIndex, {IsMicOnRole, IsCameraOnRole});
+}
+
+void ParticipantModel::updateParticipantCamera(const QString &id, bool isCameraOn)
+{
+    int index = findParticipantIndex(id);
+    if (index < 0)
+    {
+        qDebug() << "[ParticipantModel] updateParticipantCamera: 未找到参会者" << id;
+        return;
+    }
+
+    qDebug() << "[ParticipantModel] 更新参会者摄像头状态:" << id << "->" << isCameraOn;
+    m_participants[index].isCameraOn = isCameraOn;
+
+    QModelIndex modelIndex = createIndex(index, 0);
+    emit dataChanged(modelIndex, modelIndex, {IsCameraOnRole});
 }
 
 void ParticipantModel::setParticipantHandRaised(const QString &id, bool raised)

@@ -16,8 +16,8 @@ struct Participant
     bool isScreenSharing;
     bool isHost;
     bool isHandRaised;
-    bool isLocal;           // 是否为本地用户
-    QVideoSink *videoSink;  // 远程视频 Sink（本地用户为 nullptr）
+    bool isLocal;          // 是否为本地用户
+    QVideoSink *videoSink; // 远程视频 Sink（本地用户为 nullptr）
 };
 
 class ParticipantModel : public QAbstractListModel
@@ -36,8 +36,8 @@ public:
         IsScreenSharingRole,
         IsHostRole,
         IsHandRaisedRole,
-        IsLocalRole,    // 本地用户角色
-        VideoSinkRole   // 远程视频 Sink 角色
+        IsLocalRole,  // 本地用户角色
+        VideoSinkRole // 远程视频 Sink 角色
     };
 
     explicit ParticipantModel(QObject *parent = nullptr);
@@ -53,6 +53,7 @@ public slots:
     void addParticipant(const QString &id, const QString &name, bool isHost = false, bool isLocal = false);
     void removeParticipant(const QString &id);
     void updateParticipant(const QString &id, bool isMicOn, bool isCameraOn);
+    void updateParticipantCamera(const QString &id, bool isCameraOn); // 单独更新摄像头状态
     void setParticipantHandRaised(const QString &id, bool raised);
     void setParticipantScreenSharing(const QString &id, bool sharing);
     void setParticipantVideoSink(const QString &id, QVideoSink *sink);

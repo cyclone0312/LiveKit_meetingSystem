@@ -14,8 +14,11 @@
 #include <QAudioFormat>
 #include <QIODevice>
 #include <QMutex>
+#include <QBuffer>
+#include <QTimer>
 #include <memory>
 #include <atomic>
+#include <queue>
 
 // LiveKit SDK
 #include <livekit/audio_stream.h>
@@ -26,6 +29,7 @@
  * @brief 远程音频播放器
  *
  * 从 LiveKit 远程音频轨道读取帧并通过 QAudioSink 播放
+ * 【重要】QAudioSink 必须在主线程创建和操作
  */
 class RemoteAudioPlayer : public QObject
 {
@@ -33,7 +37,7 @@ class RemoteAudioPlayer : public QObject
 
 public:
     explicit RemoteAudioPlayer(std::shared_ptr<livekit::Track> audioTrack,
-                                QObject *parent = nullptr);
+                               QObject *parent = nullptr);
     ~RemoteAudioPlayer();
 
     /**
@@ -65,6 +69,14 @@ public:
 
 signals:
     void errorOccurred(const QString &error);
+    // 内部信号：用于跨线程通信
+    void audioDataReady(QByteArray data, int sampleRate, int channels);
+
+private slots:
+    /**
+     * @brief 在主线程处理音频数据
+     */
+    void onAudioDataReady(QByteArray data, int sampleRate, int channels);
 
 private:
     /**
@@ -73,7 +85,7 @@ private:
     void playbackLoop();
 
     /**
-     * @brief 初始化音频输出设备
+     * @brief 初始化音频输出设备（必须在主线程调用）
      */
     bool initAudioOutput(int sampleRate, int channels);
 
@@ -82,7 +94,7 @@ private:
     std::shared_ptr<livekit::Track> m_track;
     std::shared_ptr<livekit::AudioStream> m_audioStream;
 
-    // Qt 音频输出
+    // Qt 音频输出（必须在主线程操作）
     std::unique_ptr<QAudioSink> m_audioSink;
     QIODevice *m_audioDevice{nullptr};
 
@@ -90,6 +102,7 @@ private:
     std::atomic<bool> m_running{false};
     QString m_participantId;
     float m_volume{1.0f};
+    bool m_audioInitialized{false};
 
     // 音频参数
     int m_sampleRate{48000};

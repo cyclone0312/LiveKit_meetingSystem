@@ -169,6 +169,28 @@ Rectangle {
                 // VideoOutput.videoSink 是只读的，我们需要让 RemoteVideoRenderer 写入它
                 Component.onCompleted: {
                     console.log("[VideoItem] 远程 VideoOutput 初始化, participantId=", participantId, "participantName=", participantName)
+                    bindRemoteVideoSinkTimer.start()
+                }
+            }
+            
+            // 【新增】监听 participantId 变化，重新绑定 VideoSink
+            // GridView 的 delegate 可能在创建时 participantId 还未设置
+            Connections {
+                target: videoItem
+                function onParticipantIdChanged() {
+                    if (!isLocalUser && participantId !== "" && participantId !== "self") {
+                        console.log("[VideoItem] participantId 变化，重新绑定 VideoSink:", participantId)
+                        bindRemoteVideoSinkTimer.start()
+                    }
+                }
+            }
+            
+            // 【新增】延迟绑定远程 VideoSink 的定时器
+            Timer {
+                id: bindRemoteVideoSinkTimer
+                interval: 50
+                repeat: false
+                onTriggered: {
                     if (!isLocalUser && participantId !== "" && participantId !== "self" && remoteVideoOutput.videoSink) {
                         console.log("[VideoItem] 传递 VideoSink 给 RemoteVideoRenderer:", participantId)
                         liveKitManager.setRemoteVideoSink(participantId, remoteVideoOutput.videoSink)

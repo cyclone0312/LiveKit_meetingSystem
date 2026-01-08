@@ -64,6 +64,24 @@ ApplicationWindow {
             participantModel.removeParticipant(identity)
         }
         
+        // 【关键修复】当远程视频轨道订阅时，更新参会者的摄像头状态
+        function onTrackSubscribed(participantIdentity, trackSid, trackKind) {
+            console.log("[main.qml] 轨道订阅:", participantIdentity, trackSid, "kind:", trackKind)
+            // trackKind: 1 = Audio, 2 = Video
+            if (trackKind === 2) {
+                // 视频轨道订阅，设置 isCameraOn = true
+                console.log("[main.qml] 更新参会者摄像头状态为开启:", participantIdentity)
+                participantModel.updateParticipantCamera(participantIdentity, true)
+            }
+        }
+        
+        // 【关键修复】当远程视频轨道取消订阅时，更新参会者的摄像头状态
+        function onTrackUnsubscribed(participantIdentity, trackSid) {
+            console.log("[main.qml] 轨道取消订阅:", participantIdentity, trackSid)
+            // 可以在这里设置 isCameraOn = false，但需要判断是否是视频轨道
+            // 暂时不处理，因为参会者可能只是暂时关闭摄像头
+        }
+        
         function onConnected() {
             console.log("[main.qml] LiveKit 连接成功，添加本地用户并进入会议室")
             // 添加本地用户到参会者列表
