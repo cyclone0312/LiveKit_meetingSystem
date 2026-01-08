@@ -58,8 +58,8 @@ void RemoteVideoRenderer::start() {
 
   m_running.store(true);
 
-  // 在后台线程中运行渲染循环
-  std::thread([this]() { renderLoop(); }).detach();
+  // 在后台线程中运行渲染循环（保存线程引用以便 stop 时 join）
+  m_renderThread = std::thread([this]() { renderLoop(); });
 }
 
 void RemoteVideoRenderer::stop() {
@@ -74,6 +74,11 @@ void RemoteVideoRenderer::stop() {
   if (m_videoStream) {
     m_videoStream->close();
     m_videoStream.reset();
+  }
+
+  // 等待渲染线程结束
+  if (m_renderThread.joinable()) {
+    m_renderThread.join();
   }
 }
 
@@ -114,13 +119,20 @@ void RemoteVideoRenderer::renderLoop() {
     QVideoFrame qtFrame = convertFrame(event.frame);
     if (qtFrame.isValid()) {
       QMutexLocker locker(&m_mutex);
-      if (m_externalSink) {
+      // 【关键修复】将 QPointer 复制到局部变量
+      // 使用 QPointer 确保在 lambda 执行时能检测到对象是否已销毁
+      QPointer<QVideoSink> sinkPointer = m_externalSink;
+      if (sinkPointer) {
         // 【关键修复】使用 QMetaObject::invokeMethod 确保在主线程设置视频帧
-        // QVideoSink::setVideoFrame
-        // 必须在主线程调用，否则会导致画面不显示或卡顿
-        QVideoSink *sink = m_externalSink;
+        // lambda 捕获 QPointer，在执行时会自动检测对象是否仍然有效
         QMetaObject::invokeMethod(
-            sink, [sink, qtFrame]() { sink->setVideoFrame(qtFrame); },
+            sinkPointer.data(),
+            [sinkPointer, qtFrame]() {
+              // 再次检查 QPointer，因为在排队期间对象可能被销毁
+              if (sinkPointer) {
+                sinkPointer->setVideoFrame(qtFrame);
+              }
+            },
             Qt::QueuedConnection);
       } else if (frameCount % 100 == 1) {
         qWarning()

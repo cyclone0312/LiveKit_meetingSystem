@@ -39,6 +39,12 @@ Rectangle {
     border.color: isScreenSharing ? "#1E90FF" : "transparent"
     border.width: isScreenSharing ? 2 : 0
     
+    // 【关键】组件销毁时停止所有定时器，防止定时器在组件销毁后触发导致崩溃
+    Component.onDestruction: {
+        bindVideoSinkTimer.stop()
+        bindRemoteVideoSinkTimer.stop()
+    }
+    
     // 监听本地 isCameraOn 属性变化（用户点击开启摄像头）
     onIsCameraOnChanged: {
         console.log("[VideoItem] onIsCameraOnChanged: isLocalUser=", isLocalUser, "isCameraOn=", isCameraOn, "mediaCapture=", mediaCapture ? "有效" : "null")

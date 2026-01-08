@@ -7,8 +7,8 @@
 #include <QDebug>
 #include <QMediaFormat>
 #include <QVideoFrameFormat>
+#include <QtConcurrent>
 #include <chrono>
-
 
 // =============================================================================
 // VideoFrameHandler 实现
@@ -141,17 +141,29 @@ qint64 AudioFrameHandler::writeData(const char *data, qint64 len) {
   std::vector<std::int16_t> audioData(len / 2);
   std::memcpy(audioData.data(), data, len);
 
-  // 创建 LiveKit AudioFrame
-  try {
-    livekit::AudioFrame audioFrame(std::move(audioData), m_sampleRate,
-                                   m_numChannels, samples_per_channel);
+  // 捕获必要的变量，在后台线程发送音频帧
+  // 避免阻塞主线程，让视频和音频可以同时工作
+  auto audioSource = m_audioSource;
+  int sampleRate = m_sampleRate;
+  int numChannels = m_numChannels;
 
-    // 发送到 LiveKit（阻塞调用）
-    // 【修复】增加超时时间到 100ms，避免频繁超时
-    m_audioSource->captureFrame(audioFrame, 100);
-  } catch (const std::exception &e) {
-    // 静默忽略，避免日志洪泛
-  }
+  QtConcurrent::run([audioSource, audioData = std::move(audioData), sampleRate,
+                     numChannels, samples_per_channel]() mutable {
+    // 创建 LiveKit AudioFrame
+    try {
+      livekit::AudioFrame audioFrame(std::move(audioData), sampleRate,
+                                     numChannels, samples_per_channel);
+
+      // 发送到 LiveKit（在后台线程阻塞，不影响主线程）
+      // 【关键修复】使用 100ms 超时而非无限等待
+      // 无限等待会导致后台线程在房间销毁后仍持有对旧 AudioSource 的引用
+      // 从而导致 SDK 内部状态不一致，引发 "Rust cannot catch foreign
+      // exceptions" 崩溃
+      audioSource->captureFrame(audioFrame, 100);
+    } catch (const std::exception &e) {
+      // 静默忽略，避免日志洪泛
+    }
+  });
 
   return len;
 }
@@ -344,6 +356,50 @@ void MediaCapture::recreateAudioTrack() {
   }
 }
 
+void MediaCapture::resetLiveKitSources() {
+  qDebug() << "[MediaCapture] 重置所有 LiveKit 源和轨道...";
+
+  // 【关键】先禁用帧处理器，阻止新帧进入 LiveKit
+  if (m_videoHandler) {
+    m_videoHandler->setEnabled(false);
+  }
+  if (m_audioHandler) {
+    m_audioHandler->setEnabled(false);
+  }
+
+  // 清空旧的轨道和源（释放 shared_ptr 引用）
+  // 这会等待后台线程完成当前操作（因为我们已经设置了 100ms 超时）
+  m_lkVideoTrack.reset();
+  m_lkAudioTrack.reset();
+  m_lkVideoSource.reset();
+  m_lkAudioSource.reset();
+
+  // 给后台线程一些时间完成清理
+  QThread::msleep(150);
+
+  // 创建全新的 LiveKit 源
+  m_lkVideoSource =
+      std::make_shared<livekit::VideoSource>(VIDEO_WIDTH, VIDEO_HEIGHT);
+  m_lkAudioSource = std::make_shared<livekit::AudioSource>(
+      AUDIO_SAMPLE_RATE, AUDIO_CHANNELS, 1000);
+
+  // 更新处理器中的源引用
+  m_videoHandler->setVideoSource(m_lkVideoSource);
+
+  // 重新创建音频处理器（确保它也使用新的 AudioSource）
+  m_audioHandler = std::make_unique<AudioFrameHandler>(AUDIO_SAMPLE_RATE,
+                                                       AUDIO_CHANNELS, this);
+  m_audioHandler->setAudioSource(m_lkAudioSource);
+
+  // 创建新的轨道
+  m_lkVideoTrack = livekit::LocalVideoTrack::createLocalVideoTrack(
+      "camera", m_lkVideoSource);
+  m_lkAudioTrack = livekit::LocalAudioTrack::createLocalAudioTrack(
+      "microphone", m_lkAudioSource);
+
+  qDebug() << "[MediaCapture] LiveKit 源和轨道重置完成";
+}
+
 // =============================================================================
 // 摄像头控制
 // =============================================================================
@@ -421,8 +477,9 @@ void MediaCapture::stopCamera() {
     m_camera.reset();
   }
 
-  // 清除外部 VideoSink 引用，防止指向已销毁的 QML 对象
-  m_externalVideoSink = nullptr;
+  // 注意：不再清除 m_externalVideoSink
+  // QML 负责管理 VideoSink 的生命周期，当 VideoOutput 销毁时会设置为 null
+  // 这样避免重新加入房间时因 VideoSink 被清空而导致崩溃
 
   m_cameraActive = false;
   emit cameraActiveChanged();
@@ -466,9 +523,40 @@ void MediaCapture::startMicrophone() {
   format.setSampleFormat(QAudioFormat::Int16);
 
   // 检查设备是否支持该格式
+  bool formatChanged = false;
   if (!device.isFormatSupported(format)) {
     qWarning() << "[MediaCapture] 设备不支持请求的音频格式，使用默认格式";
     format = device.preferredFormat();
+    // 确保采样格式仍然是 Int16
+    format.setSampleFormat(QAudioFormat::Int16);
+    formatChanged = true;
+  }
+
+  // 【关键修复】如果实际格式与配置不同，需要重新创建 AudioSource 和
+  // AudioFrameHandler
+  int actualSampleRate = format.sampleRate();
+  int actualChannels = format.channelCount();
+
+  if (formatChanged || actualSampleRate != AUDIO_SAMPLE_RATE ||
+      actualChannels != AUDIO_CHANNELS) {
+    qDebug() << "[MediaCapture] 音频格式与配置不同，重新创建 AudioSource";
+    qDebug() << "[MediaCapture] 实际格式: 采样率=" << actualSampleRate
+             << "声道=" << actualChannels;
+
+    // 重新创建 AudioSource，使用实际格式
+    m_lkAudioSource = std::make_shared<livekit::AudioSource>(
+        actualSampleRate, actualChannels, 1000);
+
+    // 重新创建 AudioFrameHandler，使用实际格式
+    m_audioHandler = std::make_unique<AudioFrameHandler>(actualSampleRate,
+                                                         actualChannels, this);
+    m_audioHandler->setAudioSource(m_lkAudioSource);
+
+    // 重新创建音频轨道
+    m_lkAudioTrack = livekit::LocalAudioTrack::createLocalAudioTrack(
+        "microphone", m_lkAudioSource);
+    qDebug()
+        << "[MediaCapture] AudioSource 和 AudioTrack 已使用实际格式重新创建";
   }
 
   // 创建音频源
@@ -534,9 +622,14 @@ void MediaCapture::onVideoFrameReceived(const QVideoFrame &frame) {
   // 转发到处理器（处理器会推送到 LiveKit）
   m_videoHandler->handleVideoFrame(frame);
 
+  // 【关键修复】将 QPointer 复制到局部变量，确保在整个使用期间指针有效
+  // QPointer 的检查和使用不是原子操作，QML 对象可能在检查后、使用前被销毁
+  // 复制到局部变量后，即使 m_externalVideoSink 变为 null，局部变量仍然持有引用
+  QVideoSink *externalSink = m_externalVideoSink.data();
+
   // 如果有外部 sink，也发送帧
-  if (m_externalVideoSink && m_externalVideoSink != m_internalVideoSink.get()) {
-    m_externalVideoSink->setVideoFrame(frame);
+  if (externalSink && externalSink != m_internalVideoSink.get()) {
+    externalSink->setVideoFrame(frame);
 
     // 每100帧打印一次调试信息
     static int frameCount = 0;
