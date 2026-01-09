@@ -784,7 +784,7 @@ void LiveKitManager::publishMicrophone() {
     qDebug() << "[LiveKitManager] 首次发布，启动本地麦克风...";
     m_mediaCapture->startMicrophone();
 
-    QTimer::singleShot(300, this, [this]() { doPublishMicrophoneTrack(); });
+    QTimer::singleShot(100, this, [this]() { doPublishMicrophoneTrack(); });
     return;
   }
 

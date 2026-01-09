@@ -86,7 +86,7 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 # Windows特定设置
 if(WIN32)
     set_target_properties(${PROJECT_NAME} PROPERTIES
-        WIN32_EXECUTABLE TRUE
+        WIN32_EXECUTABLE false
     )
 endif()
 

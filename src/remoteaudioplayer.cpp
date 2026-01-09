@@ -12,7 +12,6 @@
 #include <QMediaDevices>
 #include <thread>
 
-
 RemoteAudioPlayer::RemoteAudioPlayer(std::shared_ptr<livekit::Track> audioTrack,
                                      QObject *parent)
     : QObject(parent), m_track(audioTrack) {
@@ -140,9 +139,9 @@ bool RemoteAudioPlayer::initAudioOutput(int sampleRate, int channels) {
   m_audioSink = std::make_unique<QAudioSink>(outputDevice, format);
   m_audioSink->setVolume(m_volume);
 
-  // 设置较大的缓冲区以避免断续
+  // 设置适中的缓冲区，平衡延迟和稳定性
   m_audioSink->setBufferSize(sampleRate * channels * sizeof(int16_t) /
-                             5); // 200ms 缓冲
+                             10); // 100ms 缓冲
 
   // 启动音频输出
   m_audioDevice = m_audioSink->start();
