@@ -99,6 +99,12 @@ void RemoteAudioPlayer::setVolume(float volume) {
   }
 }
 
+void RemoteAudioPlayer::setMuted(bool muted) {
+  m_muted.store(muted);
+  qDebug() << "[RemoteAudioPlayer] 参会者" << m_participantId
+           << (muted ? "已静音" : "已取消静音");
+}
+
 bool RemoteAudioPlayer::initAudioOutput(int sampleRate, int channels) {
   // 注意：此方法应该在主线程调用
   QMutexLocker locker(&m_mutex);
@@ -188,16 +194,7 @@ void RemoteAudioPlayer::onAudioDataReady(QByteArray data, int sampleRate,
   // 写入音频数据
   QMutexLocker locker(&m_mutex);
   if (m_audioDevice && m_audioSink) {
-    qint64 written = m_audioDevice->write(data);
-
-    // 每 100 次写入打印一次状态
-    static int writeCount = 0;
-    if (++writeCount % 100 == 1) {
-      qDebug() << "[RemoteAudioPlayer] 写入音频数据:"
-               << "写入=" << written << "/" << data.size()
-               << "状态=" << m_audioSink->state()
-               << "音量=" << m_audioSink->volume();
-    }
+    m_audioDevice->write(data);
   }
 }
 
@@ -222,16 +219,13 @@ void RemoteAudioPlayer::playbackLoop() {
       break;
     }
 
+    // 如果对端已静音，跳过处理（不打印日志避免刷屏）
+    if (m_muted.load()) {
+      continue;
+    }
+
     frameCount++;
     const livekit::AudioFrame &frame = event.frame;
-
-    // 每 100 帧打印一次日志
-    if (frameCount % 100 == 1) {
-      qDebug() << "[RemoteAudioPlayer] 收到音频帧 #" << frameCount
-               << "采样率=" << frame.sample_rate()
-               << "声道=" << frame.num_channels()
-               << "样本数=" << frame.data().size();
-    }
 
     // 将音频数据发送到主线程处理
     const std::vector<int16_t> &samples = frame.data();

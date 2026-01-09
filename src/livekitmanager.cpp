@@ -163,6 +163,14 @@ void LiveKitRoomDelegate::onTrackMuted(livekit::Room &room,
     QString trackSid = QString::fromStdString(event.publication->sid());
     qDebug() << "[LiveKit] 轨道静音:" << identity << trackSid;
     emit manager->trackMuted(identity, trackSid, true);
+
+    // 如果是音频轨道，通知对应的 RemoteAudioPlayer 暂停处理
+    if (manager->m_remoteAudioPlayers.contains(identity)) {
+      auto player = manager->m_remoteAudioPlayers[identity];
+      if (player) {
+        player->setMuted(true);
+      }
+    }
   }
 }
 
@@ -174,6 +182,14 @@ void LiveKitRoomDelegate::onTrackUnmuted(
     QString trackSid = QString::fromStdString(event.publication->sid());
     qDebug() << "[LiveKit] 轨道取消静音:" << identity << trackSid;
     emit manager->trackMuted(identity, trackSid, false);
+
+    // 如果是音频轨道，通知对应的 RemoteAudioPlayer 恢复处理
+    if (manager->m_remoteAudioPlayers.contains(identity)) {
+      auto player = manager->m_remoteAudioPlayers[identity];
+      if (player) {
+        player->setMuted(false);
+      }
+    }
   }
 }
 

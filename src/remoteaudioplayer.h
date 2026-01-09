@@ -62,6 +62,11 @@ public:
   bool isRunning() const { return m_running.load(); }
 
   /**
+   * @brief 设置静音状态（对端 mute 时暂停处理音频帧）
+   */
+  void setMuted(bool muted);
+
+  /**
    * @brief 设置音量 (0.0 - 1.0)
    */
   void setVolume(float volume);
@@ -100,6 +105,7 @@ private:
 
   // 状态
   std::atomic<bool> m_running{false};
+  std::atomic<bool> m_muted{false}; // 对端是否静音
   QString m_participantId;
   float m_volume{1.0f};
   bool m_audioInitialized{false};
