@@ -345,13 +345,14 @@ void LiveKitManager::joinRoom(const QString &roomName,
     leaveRoom();
 
     // 【重要】使用延时确保 SDK 内部完全清理后再连接新房间
-    // 直接调用 requestToken 可能导致 SDK 状态冲突
+    // 【关键修复】增加延迟到 500ms，给 SDK 后台线程足够时间完成事件派发和清理
+    // 如果延迟太短，旧 Room 的事件回调可能与新 Room 的初始化产生冲突
     m_pendingRoom = roomName;
     m_pendingUser = userName;
     m_isConnecting = true;
     emit connectionStateChanged();
 
-    QTimer::singleShot(200, this, [this]() {
+    QTimer::singleShot(500, this, [this]() {
       qDebug() << "[LiveKitManager] 延时后请求新房间 Token";
       requestToken(m_pendingRoom, m_pendingUser);
     });
@@ -416,9 +417,10 @@ void LiveKitManager::leaveRoom() {
   // 旧的 Room 会在这里被销毁，触发 SDK 内部的断开连接流程
   m_room.reset();
 
-  // 给 SDK 一些时间完成内部清理
-  // 【关键修复】增加等待时间，确保后台线程有足够时间完成清理
-  QThread::msleep(200);
+  // 【关键修复】给 SDK 更多时间完成内部清理
+  // SDK 后台线程可能仍在处理旧 Room 的事件回调
+  // 500ms 确保所有后台任务完成，避免新 Room 初始化时产生状态冲突
+  QThread::msleep(500);
 
   // 创建新的 Room 对象
   m_room = std::make_unique<livekit::Room>();
@@ -594,6 +596,10 @@ void LiveKitManager::connectToRoom(const QString &token) {
   // 将连接操作放到后台线程执行，避免阻塞 UI
   QtConcurrent::run([this, url, tokenStr, options]() {
     qDebug() << "[LiveKitManager] 后台线程开始连接...";
+
+    // 【安全措施】在 Connect 前短暂等待，确保 SDK 内部状态稳定
+    // 这可以避免旧 Room 的事件回调与新连接产生冲突
+    QThread::msleep(100);
 
     bool success = m_room->Connect(url, tokenStr, options);
 

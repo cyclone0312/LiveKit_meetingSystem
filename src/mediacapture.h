@@ -25,6 +25,7 @@
 #include <QPointer>
 #include <QVideoFrame>
 #include <QVideoSink>
+#include <atomic>
 #include <memory>
 
 // LiveKit SDK
@@ -77,6 +78,10 @@ public:
   void setEnabled(bool enabled);
   bool isEnabled() const { return m_enabled; }
 
+  // 【关键】设置停止标志，让后台线程立即退出
+  void setStopping(bool stopping) { m_stopping.store(stopping); }
+  bool isStopping() const { return m_stopping.load(); }
+
   // QIODevice 接口
   qint64 readData(char *data, qint64 maxlen) override;
   qint64 writeData(const char *data, qint64 len) override;
@@ -84,6 +89,7 @@ public:
 private:
   std::shared_ptr<livekit::AudioSource> m_audioSource;
   bool m_enabled = false;
+  std::atomic<bool> m_stopping{false}; // 【关键】原子标志，用于安全停止后台线程
   int m_sampleRate;
   int m_numChannels;
 };

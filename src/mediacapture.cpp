@@ -126,7 +126,11 @@ qint64 AudioFrameHandler::readData(char *data, qint64 maxlen) {
 }
 
 qint64 AudioFrameHandler::writeData(const char *data, qint64 len) {
-  if (!m_enabled || !m_audioSource || len <= 0) {
+  // 【关键修复原理：优雅退出 - 第一步】
+  // 检查停止标志（Atomic Flag）。这是"红绿灯"机制：
+  // 主线程在销毁资源前会亮起"红灯"(m_stopping=true)，
+  // 此时必须立即停止向后台发送数据，防止后台线程访问即将被销毁的资源。
+  if (!m_enabled || !m_audioSource || m_stopping.load() || len <= 0) {
     return len; // 静默丢弃
   }
 
@@ -151,14 +155,16 @@ qint64 AudioFrameHandler::writeData(const char *data, qint64 len) {
                      numChannels, samples_per_channel]() mutable {
     // 创建 LiveKit AudioFrame
     try {
+      // 【关键安全检查】确保 audioSource 仍然有效
+      if (!audioSource) {
+        return;
+      }
+
       livekit::AudioFrame audioFrame(std::move(audioData), sampleRate,
                                      numChannels, samples_per_channel);
 
       // 发送到 LiveKit（在后台线程阻塞，不影响主线程）
       // 【关键修复】使用 100ms 超时而非无限等待
-      // 无限等待会导致后台线程在房间销毁后仍持有对旧 AudioSource 的引用
-      // 从而导致 SDK 内部状态不一致，引发 "Rust cannot catch foreign
-      // exceptions" 崩溃
       audioSource->captureFrame(audioFrame, 100);
     } catch (const std::exception &e) {
       // 静默忽略，避免日志洪泛
@@ -359,12 +365,15 @@ void MediaCapture::recreateAudioTrack() {
 void MediaCapture::resetLiveKitSources() {
   qDebug() << "[MediaCapture] 重置所有 LiveKit 源和轨道...";
 
-  // 【关键】先禁用帧处理器，阻止新帧进入 LiveKit
+  // 【关键修复原理：优雅退出 - 第二步】
+  // 亮红灯：通知所有正在运行的后台线程立即停止。
+  // 设置原子标志位，确保多线程可见性。
+  if (m_audioHandler) {
+    m_audioHandler->setStopping(true);
+    m_audioHandler->setEnabled(false);
+  }
   if (m_videoHandler) {
     m_videoHandler->setEnabled(false);
-  }
-  if (m_audioHandler) {
-    m_audioHandler->setEnabled(false);
   }
 
   // 清空旧的轨道和源（释放 shared_ptr 引用）
@@ -374,8 +383,12 @@ void MediaCapture::resetLiveKitSources() {
   m_lkVideoSource.reset();
   m_lkAudioSource.reset();
 
-  // 给后台线程一些时间完成清理
-  QThread::msleep(150);
+  // 【关键修复原理：优雅退出 - 第三步】
+  // 停车等待（Graceful Wait）：给后台线程足够的时间（300ms）来"刹车"。
+  // 因为后台线程的 captureFrame 调用设置了 100ms 超时，
+  // 300ms 足够让已经在运行的任务安全结束。
+  // 如果没有这个等待，主线程销毁资源时，后台线程可能还在强行写入，导致崩溃。
+  QThread::msleep(300);
 
   // 创建全新的 LiveKit 源
   m_lkVideoSource =
@@ -390,6 +403,8 @@ void MediaCapture::resetLiveKitSources() {
   m_audioHandler = std::make_unique<AudioFrameHandler>(AUDIO_SAMPLE_RATE,
                                                        AUDIO_CHANNELS, this);
   m_audioHandler->setAudioSource(m_lkAudioSource);
+  // 【关键】重置停止标志，允许新的后台线程工作
+  m_audioHandler->setStopping(false);
 
   // 创建新的轨道
   m_lkVideoTrack = livekit::LocalVideoTrack::createLocalVideoTrack(

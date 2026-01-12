@@ -96,7 +96,10 @@ ApplicationWindow {
         
         function onDisconnected() {
             console.log("[main.qml] LiveKit 断开连接，清空参会者列表")
-            participantModel.clear()
+            // 【关键修复】添加空值检查，避免程序关闭时崩溃
+            if (participantModel) {
+                participantModel.clear()
+            }
         }
         
         function onRemoteVideoSinkReady(participantId, sink) {

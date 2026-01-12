@@ -28,3 +28,6 @@ Thumbs.db
 *.dylib
 *.a
 *.lib
+
+# 第三方 SDK (体积大，且包含大量二进制文件，不建议提交到 git)
+livekit-sdk-*

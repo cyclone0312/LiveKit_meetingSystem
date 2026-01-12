@@ -71,7 +71,8 @@ Page {
                     
                     Text {
                         anchors.centerIn: parent
-                        text: meetingController.userName.charAt(0)
+                        // 【关键修复】添加空值检查，避免程序关闭时崩溃
+                        text: (meetingController && meetingController.userName) ? meetingController.userName.charAt(0) : ""
                         font.pixelSize: 16
                         font.bold: true
                         color: "white"
@@ -79,7 +80,8 @@ Page {
                 }
                 
                 Text {
-                    text: meetingController.userName
+                    // 【关键修复】添加空值检查
+                    text: (meetingController && meetingController.userName) ? meetingController.userName : ""
                     font.pixelSize: 14
                     color: "#FFFFFF"
                 }
