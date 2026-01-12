@@ -18,7 +18,6 @@
 #include <QString>
 #include <memory>
 
-
 // LiveKit SDK 头文件
 #include <livekit/livekit.h>
 #include <livekit/local_participant.h>
@@ -27,14 +26,13 @@
 #include <livekit/room.h>
 #include <livekit/room_delegate.h>
 
-
 // 媒体采集（需要完整定义，因为 Q_PROPERTY 使用了 MediaCapture*）
 #include "mediacapture.h"
+#include "screencapture.h"
 
 // 远程媒体渲染
 #include "remoteaudioplayer.h"
 #include "remotevideorenderer.h"
-
 
 #include <QMap>
 
@@ -107,7 +105,10 @@ class LiveKitManager : public QObject {
       bool cameraPublished READ isCameraPublished NOTIFY cameraPublishedChanged)
   Q_PROPERTY(bool microphonePublished READ isMicrophonePublished NOTIFY
                  microphonePublishedChanged)
+  Q_PROPERTY(bool screenSharePublished READ isScreenSharePublished NOTIFY
+                 screenSharePublishedChanged)
   Q_PROPERTY(MediaCapture *mediaCapture READ mediaCapture CONSTANT)
+  Q_PROPERTY(ScreenCapture *screenCapture READ screenCapture CONSTANT)
 
 public:
   explicit LiveKitManager(QObject *parent = nullptr);
@@ -125,7 +126,9 @@ public:
   // 媒体状态 Getter
   bool isCameraPublished() const;
   bool isMicrophonePublished() const;
+  bool isScreenSharePublished() const;
   MediaCapture *mediaCapture() const;
+  ScreenCapture *screenCapture() const;
 
   // 属性 Setter
   void setServerUrl(const QString &url);
@@ -178,6 +181,13 @@ public slots:
   void toggleMicrophone();
 
   /**
+   * @brief 发布/取消发布屏幕共享轨道
+   */
+  void publishScreenShare();
+  void unpublishScreenShare();
+  void toggleScreenShare();
+
+  /**
    * @brief 设置远程参会者的视频 Sink（供 QML 调用）
    * @param participantId 参会者 ID
    * @param sink QML VideoOutput 的 videoSink
@@ -191,6 +201,7 @@ private:
    */
   void doPublishCameraTrack();
   void doPublishMicrophoneTrack();
+  void doPublishScreenShareTrack();
 
 public slots:
 
@@ -231,6 +242,7 @@ signals:
   // 本地媒体发布信号
   void cameraPublishedChanged();
   void microphonePublishedChanged();
+  void screenSharePublishedChanged();
 
   // 兼容旧接口的信号
   void participantMicChanged(const QString &id, bool enabled);
@@ -269,12 +281,15 @@ private:
 
   // 媒体采集
   std::unique_ptr<MediaCapture> m_mediaCapture;
+  std::unique_ptr<ScreenCapture> m_screenCapture;
 
   // 已发布的轨道
   std::shared_ptr<livekit::LocalTrackPublication> m_videoPublication;
   std::shared_ptr<livekit::LocalTrackPublication> m_audioPublication;
+  std::shared_ptr<livekit::LocalTrackPublication> m_screenSharePublication;
   bool m_cameraPublished = false;
   bool m_microphonePublished = false;
+  bool m_screenSharePublished = false;
 
   // 服务器配置
   QString m_serverUrl;

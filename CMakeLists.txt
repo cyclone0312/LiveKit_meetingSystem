@@ -40,6 +40,8 @@ set(PROJECT_SOURCES
     src/livekitmanager.h
     src/mediacapture.cpp
     src/mediacapture.h
+    src/screencapture.cpp
+    src/screencapture.h
     src/remotevideorenderer.cpp
     src/remotevideorenderer.h
     src/remoteaudioplayer.cpp
@@ -120,6 +122,12 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 if(WIN32)
     set_target_properties(${PROJECT_NAME} PROPERTIES
         WIN32_EXECUTABLE false
+    )
+    
+    # Windows 屏幕捕获依赖（DXGI Desktop Duplication）
+    target_link_libraries(${PROJECT_NAME} PRIVATE
+        d3d11
+        dxgi
     )
 endif()
 

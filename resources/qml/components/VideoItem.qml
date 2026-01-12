@@ -34,6 +34,9 @@ Rectangle {
     // 需要通过 VideoGrid 的属性中转传递
     property var mediaCapture: null
     
+    // 【新增】ScreenCapture 对象引用，用于本地屏幕共享预览
+    property var screenCapture: null
+    
     radius: 8
     color: "#252542"
     border.color: isScreenSharing ? "#1E90FF" : "transparent"
@@ -121,12 +124,13 @@ Rectangle {
             }
         }
         
-        // 当摄像头开启时显示视频画面
+        // 当摄像头开启 或 本地用户共享屏幕时 显示视频画面
         Rectangle {
             id: videoContainer
             anchors.fill: parent
             radius: 6
-            visible: isCameraOn
+            // 【修复】当摄像头开启 或 本地用户正在屏幕共享时，显示视频容器
+            visible: isCameraOn || (isLocalUser && isScreenSharing)
             clip: true
             color: "#1A1A2E"
             
@@ -160,6 +164,33 @@ Rectangle {
                     if (isLocalUser && mediaCapture && mediaCapture.cameraActive && localVideoOutput.videoSink) {
                         console.log("[VideoItem] 摄像头激活，重新绑定 VideoSink")
                         mediaCapture.bindVideoSink(localVideoOutput.videoSink)
+                    }
+                }
+            }
+            
+            // 【新增】本地用户屏幕共享预览
+            VideoOutput {
+                id: screenShareVideoOutput
+                anchors.fill: parent
+                visible: isLocalUser && isScreenSharing && screenCapture !== null && screenCapture.isActive
+                fillMode: VideoOutput.PreserveAspectFit
+                
+                Component.onCompleted: {
+                    if (isLocalUser && screenCapture && screenShareVideoOutput.videoSink) {
+                        console.log("[VideoItem] 屏幕共享 VideoOutput 初始化，绑定 VideoSink")
+                        screenCapture.bindVideoSink(screenShareVideoOutput.videoSink)
+                    }
+                }
+            }
+            
+            // 监听屏幕共享状态变化
+            Connections {
+                target: isLocalUser && screenCapture ? screenCapture : null
+                
+                function onActiveChanged() {
+                    if (isLocalUser && screenCapture && screenCapture.isActive && screenShareVideoOutput.videoSink) {
+                        console.log("[VideoItem] 屏幕共享激活，绑定 VideoSink")
+                        screenCapture.bindVideoSink(screenShareVideoOutput.videoSink)
                     }
                 }
             }

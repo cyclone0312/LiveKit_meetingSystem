@@ -261,6 +261,7 @@ LiveKitManager::LiveKitManager(QObject *parent)
       m_room(std::make_unique<livekit::Room>()),
       m_delegate(std::make_unique<LiveKitRoomDelegate>()),
       m_mediaCapture(std::make_unique<MediaCapture>(this)),
+      m_screenCapture(std::make_unique<ScreenCapture>(this)),
       m_serverUrl(Config::DEFAULT_LIVEKIT_SERVER),
       m_tokenServerUrl(Config::DEFAULT_TOKEN_SERVER), m_isConnected(false),
       m_isConnecting(false) {
@@ -303,8 +304,14 @@ bool LiveKitManager::isCameraPublished() const { return m_cameraPublished; }
 bool LiveKitManager::isMicrophonePublished() const {
   return m_microphonePublished;
 }
+bool LiveKitManager::isScreenSharePublished() const {
+  return m_screenSharePublished;
+}
 MediaCapture *LiveKitManager::mediaCapture() const {
   return m_mediaCapture.get();
+}
+ScreenCapture *LiveKitManager::screenCapture() const {
+  return m_screenCapture.get();
 }
 
 // ==================== 属性 Setter ====================
@@ -380,10 +387,18 @@ void LiveKitManager::leaveRoom() {
   // 清除发布状态
   m_videoPublication.reset();
   m_audioPublication.reset();
+  m_screenSharePublication.reset();
   m_cameraPublished = false;
   m_microphonePublished = false;
+  m_screenSharePublished = false;
   emit cameraPublishedChanged();
   emit microphonePublishedChanged();
+  emit screenSharePublishedChanged();
+
+  // 停止屏幕共享
+  if (m_screenCapture) {
+    m_screenCapture->stopCapture();
+  }
 
   // 停止并清除所有远程渲染器
   qDebug() << "[LiveKitManager] 停止所有远程视频渲染器:"
@@ -438,6 +453,9 @@ void LiveKitManager::leaveRoom() {
   if (m_mediaCapture) {
     qDebug() << "[LiveKitManager] 重置 LiveKit 源和轨道...";
     m_mediaCapture->resetLiveKitSources();
+  }
+  if (m_screenCapture) {
+    m_screenCapture->resetLiveKitSources();
   }
 
   emit connectionStateChanged();
@@ -503,8 +521,11 @@ void LiveKitManager::updateCameraState(bool enabled) {
 }
 
 void LiveKitManager::updateScreenShareState(bool enabled) {
-  Q_UNUSED(enabled)
-  // TODO: 实现屏幕共享
+  if (enabled) {
+    publishScreenShare();
+  } else {
+    unpublishScreenShare();
+  }
 }
 
 void LiveKitManager::updateHandRaiseState(bool raised) {
@@ -873,6 +894,119 @@ void LiveKitManager::toggleMicrophone() {
     unpublishMicrophone();
   } else {
     publishMicrophone();
+  }
+}
+
+// ==================== 屏幕共享轨道控制 ====================
+
+void LiveKitManager::publishScreenShare() {
+  qDebug() << "[LiveKitManager] publishScreenShare 被调用, isConnected="
+           << m_isConnected
+           << "screenSharePublished=" << m_screenSharePublished;
+
+  if (!m_isConnected) {
+    setError("未连接到房间，无法发布屏幕共享");
+    return;
+  }
+
+  // 如果已经发布过，只需要 unmute 和启动屏幕捕获
+  if (m_screenSharePublished && m_screenSharePublication) {
+    qDebug() << "[LiveKitManager] 屏幕共享已发布，启动屏幕捕获并 unmute";
+
+    // 启动屏幕捕获
+    if (!m_screenCapture->isActive()) {
+      m_screenCapture->startCapture();
+    }
+
+    try {
+      m_screenSharePublication->setMuted(false);
+      qDebug() << "[LiveKitManager] 屏幕共享已 unmute";
+    } catch (const std::exception &e) {
+      qWarning() << "[LiveKitManager] unmute 屏幕共享失败:" << e.what();
+    }
+    return;
+  }
+
+  // 首次发布：先启动屏幕捕获
+  if (!m_screenCapture->isActive()) {
+    qDebug() << "[LiveKitManager] 首次发布，启动屏幕捕获...";
+    m_screenCapture->startCapture();
+
+    // 等待屏幕捕获启动完成后再发布
+    QTimer::singleShot(500, this, [this]() { doPublishScreenShareTrack(); });
+    return;
+  }
+
+  // 屏幕捕获已经启动，直接发布
+  doPublishScreenShareTrack();
+}
+
+void LiveKitManager::doPublishScreenShareTrack() {
+  qDebug() << "[LiveKitManager] doPublishScreenShareTrack 被调用";
+
+  if (!m_isConnected || m_screenSharePublished) {
+    qDebug() << "[LiveKitManager] 跳过发布屏幕共享 (未连接或已发布)";
+    return;
+  }
+
+  auto *localParticipant = m_room->localParticipant();
+  if (!localParticipant) {
+    setError("无法获取本地参会者");
+    return;
+  }
+
+  try {
+    auto screenTrack = m_screenCapture->getScreenTrack();
+    if (!screenTrack) {
+      setError("屏幕共享轨道未创建");
+      return;
+    }
+
+    qDebug() << "[LiveKitManager] 正在发布屏幕共享轨道...";
+
+    // 设置发布选项 - 使用屏幕共享源类型
+    livekit::TrackPublishOptions options;
+    options.source = livekit::TrackSource::SOURCE_SCREENSHARE;
+
+    // 发布轨道
+    m_screenSharePublication = localParticipant->publishTrack(
+        std::static_pointer_cast<livekit::Track>(screenTrack), options);
+
+    m_screenSharePublished = true;
+    emit screenSharePublishedChanged();
+    qDebug() << "[LiveKitManager] 屏幕共享轨道已发布";
+  } catch (const std::exception &e) {
+    setError(QString("发布屏幕共享失败: %1").arg(e.what()));
+  }
+}
+
+void LiveKitManager::unpublishScreenShare() {
+  qDebug() << "[LiveKitManager] 取消屏幕共享 (mute), isConnected="
+           << m_isConnected
+           << "screenSharePublished=" << m_screenSharePublished;
+
+  // 使用 mute 代替 unpublish，避免阻塞
+  if (m_screenSharePublication) {
+    try {
+      qDebug() << "[LiveKitManager] 执行屏幕共享 mute";
+      m_screenSharePublication->setMuted(true);
+      qDebug() << "[LiveKitManager] 屏幕共享已 mute";
+    } catch (const std::exception &e) {
+      qWarning() << "[LiveKitManager] mute 屏幕共享失败:" << e.what();
+    }
+  }
+
+  // 停止屏幕捕获以节省资源
+  if (m_screenCapture) {
+    m_screenCapture->stopCapture();
+  }
+}
+
+void LiveKitManager::toggleScreenShare() {
+  if (m_screenSharePublished) {
+    unpublishScreenShare();
+  } else {
+    publishScreenShare();
   }
 }
 

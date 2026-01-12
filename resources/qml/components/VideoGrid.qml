@@ -26,6 +26,9 @@ Item {
     // 这样 delegate 就可以通过 videoGrid.mediaCaptureRef 访问
     property var mediaCaptureRef: mediaCapture
     
+    // 【新增】屏幕共享引用，供本地用户显示屏幕共享预览
+    property var screenCaptureRef: liveKitManager ? liveKitManager.screenCapture : null
+    
     property int columns: calculateColumns()
     property int rows: calculateRows()
     
@@ -68,12 +71,16 @@ Item {
             isCameraOn: model.isLocal ? meetingController.isCameraOn : model.isCameraOn
             isHost: model.isHost
             isHandRaised: model.isHandRaised
-            isScreenSharing: model.isScreenSharing
+            // 【修复】本地用户的屏幕共享状态从 meetingController 获取
+            isScreenSharing: model.isLocal ? meetingController.isScreenSharing : model.isScreenSharing
             isLocalUser: model.isLocal  // 标记是否为本地用户
             
             // 【重要】通过 videoGrid 的属性传递 mediaCapture，而非直接引用全局变量
             // 只有本地用户需要 mediaCapture 来显示本地摄像头画面
             mediaCapture: model.isLocal ? videoGrid.mediaCaptureRef : null
+            
+            // 【新增】传递 screenCapture 供本地屏幕共享预览
+            screenCapture: model.isLocal ? videoGrid.screenCaptureRef : null
         }
         
         // 空状态
