@@ -16,6 +16,7 @@
 #include <QObject>
 #include <QPointer>
 #include <QString>
+#include <atomic>
 #include <memory>
 
 // LiveKit SDK 头文件
@@ -48,6 +49,10 @@ class LiveKitManager;
 class LiveKitRoomDelegate : public livekit::RoomDelegate {
 public:
   LiveKitManager *manager = nullptr;
+
+  // 【关键修复】原子标志位，用于在房间转换期间禁用回调
+  // 比销毁 delegate 更安全，避免 SDK 内部内存问题
+  std::atomic<bool> enabled{true};
 
   // 参会者事件
   void onParticipantConnected(

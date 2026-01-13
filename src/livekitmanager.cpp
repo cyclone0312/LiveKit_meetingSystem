@@ -29,127 +29,139 @@ bool LiveKitManager::s_sdkInitialized = false;
 void LiveKitRoomDelegate::onParticipantConnected(
     livekit::Room &room, const livekit::ParticipantConnectedEvent &event) {
   Q_UNUSED(room)
-  if (manager) {
-    QString identity = QString::fromStdString(event.participant->identity());
-    QString name = QString::fromStdString(event.participant->name());
-    qDebug() << "[LiveKit] 参会者加入:" << identity << name;
-    emit manager->participantJoined(identity, name.isEmpty() ? identity : name);
+  // 【关键修复】检查 enabled 标志，在房间转换期间忽略回调
+  if (!enabled.load() || !manager) {
+    qDebug() << "[LiveKit] 忽略 onParticipantConnected 回调 (enabled="
+             << enabled.load() << ")";
+    return;
   }
+  QString identity = QString::fromStdString(event.participant->identity());
+  QString name = QString::fromStdString(event.participant->name());
+  qDebug() << "[LiveKit] 参会者加入:" << identity << name;
+  emit manager->participantJoined(identity, name.isEmpty() ? identity : name);
 }
 
 void LiveKitRoomDelegate::onParticipantDisconnected(
     livekit::Room &room, const livekit::ParticipantDisconnectedEvent &event) {
   Q_UNUSED(room)
-  if (manager && event.participant) {
-    QString identity = QString::fromStdString(event.participant->identity());
-    qDebug() << "[LiveKit] 参会者离开:" << identity;
-    emit manager->participantLeft(identity);
+  // 【关键修复】检查 enabled 标志
+  if (!enabled.load() || !manager || !event.participant) {
+    return;
   }
+  QString identity = QString::fromStdString(event.participant->identity());
+  qDebug() << "[LiveKit] 参会者离开:" << identity;
+  emit manager->participantLeft(identity);
 }
 
 void LiveKitRoomDelegate::onTrackSubscribed(
     livekit::Room &room, const livekit::TrackSubscribedEvent &event) {
   Q_UNUSED(room)
-  if (manager) {
-    // 保存 manager 到本地变量，以便在 lambda 中捕获
-    LiveKitManager *mgr = manager;
+  // 【关键修复】检查 enabled 标志
+  if (!enabled.load() || !manager) {
+    qDebug() << "[LiveKit] 忽略 onTrackSubscribed 回调 (enabled="
+             << enabled.load() << ")";
+    return;
+  }
+  // 保存 manager 到本地变量，以便在 lambda 中捕获
+  LiveKitManager *mgr = manager;
 
-    QString identity = QString::fromStdString(event.participant->identity());
-    QString trackSid = QString::fromStdString(event.track->sid());
-    livekit::TrackKind kind = event.track->kind();
-    int kindInt = static_cast<int>(kind);
-    qDebug() << "[LiveKit] 轨道订阅:" << identity << trackSid
-             << "kind:" << kindInt;
-    emit mgr->trackSubscribed(identity, trackSid, kindInt);
+  QString identity = QString::fromStdString(event.participant->identity());
+  QString trackSid = QString::fromStdString(event.track->sid());
+  livekit::TrackKind kind = event.track->kind();
+  int kindInt = static_cast<int>(kind);
+  qDebug() << "[LiveKit] 轨道订阅:" << identity << trackSid
+           << "kind:" << kindInt;
+  emit mgr->trackSubscribed(identity, trackSid, kindInt);
 
-    // 根据轨道类型创建相应的渲染器/播放器
-    if (kind == livekit::TrackKind::KIND_VIDEO) {
-      // 创建远程视频渲染器
-      // 【关键修复】必须在主线程创建 RemoteVideoRenderer
-      // Qt 对象和视频 Sink 操作需要在主线程进行
-      qDebug() << "[LiveKit] 创建远程视频渲染器:" << identity;
+  // 根据轨道类型创建相应的渲染器/播放器
+  if (kind == livekit::TrackKind::KIND_VIDEO) {
+    // 创建远程视频渲染器
+    // 【关键修复】必须在主线程创建 RemoteVideoRenderer
+    // Qt 对象和视频 Sink 操作需要在主线程进行
+    qDebug() << "[LiveKit] 创建远程视频渲染器:" << identity;
 
-      auto track = event.track;
-      QMetaObject::invokeMethod(
-          mgr,
-          [mgr, track, identity]() {
-            auto renderer = std::make_shared<RemoteVideoRenderer>(track);
-            renderer->setParticipantId(identity);
-            renderer->start();
-            mgr->m_remoteVideoRenderers[identity] = renderer;
+    auto track = event.track;
+    QMetaObject::invokeMethod(
+        mgr,
+        [mgr, track, identity]() {
+          auto renderer = std::make_shared<RemoteVideoRenderer>(track);
+          renderer->setParticipantId(identity);
+          renderer->start();
+          mgr->m_remoteVideoRenderers[identity] = renderer;
 
-            // 【关键】检查是否有待处理的 VideoSink（QML
-            // 在渲染器创建前就设置了）
-            if (mgr->m_pendingVideoSinks.contains(identity)) {
-              QVideoSink *pendingSink = mgr->m_pendingVideoSinks.take(identity);
-              // 【安全检查】QPointer 可能在 QML 对象销毁后变为 null
-              if (pendingSink) {
-                qDebug() << "[LiveKit] 应用待处理的 VideoSink:" << identity;
-                renderer->setExternalVideoSink(pendingSink);
-              } else {
-                qDebug() << "[LiveKit] 待处理的 VideoSink 已失效，跳过:"
-                         << identity;
-              }
+          // 【关键】检查是否有待处理的 VideoSink（QML
+          // 在渲染器创建前就设置了）
+          if (mgr->m_pendingVideoSinks.contains(identity)) {
+            QVideoSink *pendingSink = mgr->m_pendingVideoSinks.take(identity);
+            // 【安全检查】QPointer 可能在 QML 对象销毁后变为 null
+            if (pendingSink) {
+              qDebug() << "[LiveKit] 应用待处理的 VideoSink:" << identity;
+              renderer->setExternalVideoSink(pendingSink);
+            } else {
+              qDebug() << "[LiveKit] 待处理的 VideoSink 已失效，跳过:"
+                       << identity;
             }
-            qDebug() << "[LiveKit] 视频渲染器已在主线程创建并启动:" << identity;
-          },
-          Qt::QueuedConnection);
-    } else if (kind == livekit::TrackKind::KIND_AUDIO) {
-      // 创建远程音频播放器
-      // 【关键修复】必须在主线程创建 RemoteAudioPlayer
-      // 因为 Qt 信号槽的 QueuedConnection 需要对象的线程关联正确
-      // 如果在回调线程创建，信号将无法传递到主线程的事件循环
-      qDebug() << "[LiveKit] 创建远程音频播放器:" << identity;
+          }
+          qDebug() << "[LiveKit] 视频渲染器已在主线程创建并启动:" << identity;
+        },
+        Qt::QueuedConnection);
+  } else if (kind == livekit::TrackKind::KIND_AUDIO) {
+    // 创建远程音频播放器
+    // 【关键修复】必须在主线程创建 RemoteAudioPlayer
+    // 因为 Qt 信号槽的 QueuedConnection 需要对象的线程关联正确
+    // 如果在回调线程创建，信号将无法传递到主线程的事件循环
+    qDebug() << "[LiveKit] 创建远程音频播放器:" << identity;
 
-      auto track = event.track;
-      QMetaObject::invokeMethod(
-          mgr,
-          [mgr, track, identity]() {
-            auto player = std::make_shared<RemoteAudioPlayer>(track);
-            player->setParticipantId(identity);
-            player->start();
-            mgr->m_remoteAudioPlayers[identity] = player;
-            qDebug() << "[LiveKit] 音频播放器已在主线程创建并启动:" << identity;
-          },
-          Qt::QueuedConnection);
-    }
+    auto track = event.track;
+    QMetaObject::invokeMethod(
+        mgr,
+        [mgr, track, identity]() {
+          auto player = std::make_shared<RemoteAudioPlayer>(track);
+          player->setParticipantId(identity);
+          player->start();
+          mgr->m_remoteAudioPlayers[identity] = player;
+          qDebug() << "[LiveKit] 音频播放器已在主线程创建并启动:" << identity;
+        },
+        Qt::QueuedConnection);
   }
 }
 
 void LiveKitRoomDelegate::onTrackUnsubscribed(
     livekit::Room &room, const livekit::TrackUnsubscribedEvent &event) {
   Q_UNUSED(room)
-  if (manager && event.participant && event.track) {
-    // 保存 manager 到本地变量，以便在 lambda 中捕获
-    LiveKitManager *mgr = manager;
+  // 【关键修复】检查 enabled 标志
+  if (!enabled.load() || !manager || !event.participant || !event.track) {
+    return;
+  }
+  // 保存 manager 到本地变量，以便在 lambda 中捕获
+  LiveKitManager *mgr = manager;
 
-    QString identity = QString::fromStdString(event.participant->identity());
-    QString trackSid = QString::fromStdString(event.track->sid());
-    livekit::TrackKind kind = event.track->kind();
-    qDebug() << "[LiveKit] 轨道取消订阅:" << identity << trackSid;
-    emit mgr->trackUnsubscribed(identity, trackSid);
+  QString identity = QString::fromStdString(event.participant->identity());
+  QString trackSid = QString::fromStdString(event.track->sid());
+  livekit::TrackKind kind = event.track->kind();
+  qDebug() << "[LiveKit] 轨道取消订阅:" << identity << trackSid;
+  emit mgr->trackUnsubscribed(identity, trackSid);
 
-    // 清理对应的渲染器/播放器
-    if (kind == livekit::TrackKind::KIND_VIDEO) {
-      if (mgr->m_remoteVideoRenderers.contains(identity)) {
-        qDebug() << "[LiveKit] 停止并移除远程视频渲染器:" << identity;
-        auto renderer = mgr->m_remoteVideoRenderers.take(identity);
-        if (renderer) {
-          renderer->stop();
-        }
-        // 通知 QML 视频 Sink 已移除
-        QMetaObject::invokeMethod(
-            mgr,
-            [mgr, identity]() { emit mgr->remoteVideoSinkRemoved(identity); },
-            Qt::QueuedConnection);
+  // 清理对应的渲染器/播放器
+  if (kind == livekit::TrackKind::KIND_VIDEO) {
+    if (mgr->m_remoteVideoRenderers.contains(identity)) {
+      qDebug() << "[LiveKit] 停止并移除远程视频渲染器:" << identity;
+      auto renderer = mgr->m_remoteVideoRenderers.take(identity);
+      if (renderer) {
+        renderer->stop();
       }
-    } else if (kind == livekit::TrackKind::KIND_AUDIO) {
-      if (mgr->m_remoteAudioPlayers.contains(identity)) {
-        qDebug() << "[LiveKit] 停止并移除远程音频播放器:" << identity;
-        auto player = mgr->m_remoteAudioPlayers.take(identity);
-        if (player) {
-          player->stop();
-        }
+      // 通知 QML 视频 Sink 已移除
+      QMetaObject::invokeMethod(
+          mgr,
+          [mgr, identity]() { emit mgr->remoteVideoSinkRemoved(identity); },
+          Qt::QueuedConnection);
+    }
+  } else if (kind == livekit::TrackKind::KIND_AUDIO) {
+    if (mgr->m_remoteAudioPlayers.contains(identity)) {
+      qDebug() << "[LiveKit] 停止并移除远程音频播放器:" << identity;
+      auto player = mgr->m_remoteAudioPlayers.take(identity);
+      if (player) {
+        player->stop();
       }
     }
   }
@@ -158,18 +170,20 @@ void LiveKitRoomDelegate::onTrackUnsubscribed(
 void LiveKitRoomDelegate::onTrackMuted(livekit::Room &room,
                                        const livekit::TrackMutedEvent &event) {
   Q_UNUSED(room)
-  if (manager && event.participant && event.publication) {
-    QString identity = QString::fromStdString(event.participant->identity());
-    QString trackSid = QString::fromStdString(event.publication->sid());
-    qDebug() << "[LiveKit] 轨道静音:" << identity << trackSid;
-    emit manager->trackMuted(identity, trackSid, true);
+  // 【关键修复】检查 enabled 标志
+  if (!enabled.load() || !manager || !event.participant || !event.publication) {
+    return;
+  }
+  QString identity = QString::fromStdString(event.participant->identity());
+  QString trackSid = QString::fromStdString(event.publication->sid());
+  qDebug() << "[LiveKit] 轨道静音:" << identity << trackSid;
+  emit manager->trackMuted(identity, trackSid, true);
 
-    // 如果是音频轨道，通知对应的 RemoteAudioPlayer 暂停处理
-    if (manager->m_remoteAudioPlayers.contains(identity)) {
-      auto player = manager->m_remoteAudioPlayers[identity];
-      if (player) {
-        player->setMuted(true);
-      }
+  // 如果是音频轨道，通知对应的 RemoteAudioPlayer 暂停处理
+  if (manager->m_remoteAudioPlayers.contains(identity)) {
+    auto player = manager->m_remoteAudioPlayers[identity];
+    if (player) {
+      player->setMuted(true);
     }
   }
 }
@@ -177,18 +191,20 @@ void LiveKitRoomDelegate::onTrackMuted(livekit::Room &room,
 void LiveKitRoomDelegate::onTrackUnmuted(
     livekit::Room &room, const livekit::TrackUnmutedEvent &event) {
   Q_UNUSED(room)
-  if (manager && event.participant && event.publication) {
-    QString identity = QString::fromStdString(event.participant->identity());
-    QString trackSid = QString::fromStdString(event.publication->sid());
-    qDebug() << "[LiveKit] 轨道取消静音:" << identity << trackSid;
-    emit manager->trackMuted(identity, trackSid, false);
+  // 【关键修复】检查 enabled 标志
+  if (!enabled.load() || !manager || !event.participant || !event.publication) {
+    return;
+  }
+  QString identity = QString::fromStdString(event.participant->identity());
+  QString trackSid = QString::fromStdString(event.publication->sid());
+  qDebug() << "[LiveKit] 轨道取消静音:" << identity << trackSid;
+  emit manager->trackMuted(identity, trackSid, false);
 
-    // 如果是音频轨道，通知对应的 RemoteAudioPlayer 恢复处理
-    if (manager->m_remoteAudioPlayers.contains(identity)) {
-      auto player = manager->m_remoteAudioPlayers[identity];
-      if (player) {
-        player->setMuted(false);
-      }
+  // 如果是音频轨道，通知对应的 RemoteAudioPlayer 恢复处理
+  if (manager->m_remoteAudioPlayers.contains(identity)) {
+    auto player = manager->m_remoteAudioPlayers[identity];
+    if (player) {
+      player->setMuted(false);
     }
   }
 }
@@ -197,6 +213,11 @@ void LiveKitRoomDelegate::onDisconnected(
     livekit::Room &room, const livekit::DisconnectedEvent &event) {
   Q_UNUSED(room)
   Q_UNUSED(event)
+  // 【关键修复】检查 enabled 标志
+  if (!enabled.load()) {
+    qDebug() << "[LiveKit] 忽略 onDisconnected 回调 (delegate 已禁用)";
+    return;
+  }
   if (manager && manager->m_isConnected) {
     qDebug() << "[LiveKit] 断开连接";
     manager->m_isConnected = false;
@@ -212,44 +233,49 @@ void LiveKitRoomDelegate::onReconnecting(
     livekit::Room &room, const livekit::ReconnectingEvent &event) {
   Q_UNUSED(room)
   Q_UNUSED(event)
-  if (manager) {
-    qDebug() << "[LiveKit] 正在重连...";
-    emit manager->reconnecting();
+  // 【关键修复】检查 enabled 标志
+  if (!enabled.load() || !manager) {
+    return;
   }
+  qDebug() << "[LiveKit] 正在重连...";
+  emit manager->reconnecting();
 }
 
 void LiveKitRoomDelegate::onReconnected(
     livekit::Room &room, const livekit::ReconnectedEvent &event) {
   Q_UNUSED(room)
   Q_UNUSED(event)
-  if (manager) {
-    qDebug() << "[LiveKit] 重连成功";
-    emit manager->reconnected();
+  // 【关键修复】检查 enabled 标志
+  if (!enabled.load() || !manager) {
+    return;
   }
+  qDebug() << "[LiveKit] 重连成功";
+  emit manager->reconnected();
 }
 
 void LiveKitRoomDelegate::onUserPacketReceived(
     livekit::Room &room, const livekit::UserDataPacketEvent &event) {
   Q_UNUSED(room)
-  if (manager) {
-    QString identity =
-        event.participant
-            ? QString::fromStdString(event.participant->identity())
-            : QString();
-    QByteArray data(reinterpret_cast<const char *>(event.data.data()),
-                    static_cast<int>(event.data.size()));
-    qDebug() << "[LiveKit] 收到数据:" << identity << data.size() << "bytes";
-    emit manager->dataReceived(identity, data);
+  // 【关键修复】检查 enabled 标志
+  if (!enabled.load() || !manager) {
+    return;
+  }
+  QString identity = event.participant
+                         ? QString::fromStdString(event.participant->identity())
+                         : QString();
+  QByteArray data(reinterpret_cast<const char *>(event.data.data()),
+                  static_cast<int>(event.data.size()));
+  qDebug() << "[LiveKit] 收到数据:" << identity << data.size() << "bytes";
+  emit manager->dataReceived(identity, data);
 
-    // 尝试解析为聊天消息
-    QJsonDocument doc = QJsonDocument::fromJson(data);
-    if (!doc.isNull() && doc.isObject()) {
-      QJsonObject obj = doc.object();
-      if (obj.contains("type") && obj["type"].toString() == "chat") {
-        QString senderName = obj["senderName"].toString();
-        QString content = obj["content"].toString();
-        emit manager->chatMessageReceived(identity, senderName, content);
-      }
+  // 尝试解析为聊天消息
+  QJsonDocument doc = QJsonDocument::fromJson(data);
+  if (!doc.isNull() && doc.isObject()) {
+    QJsonObject obj = doc.object();
+    if (obj.contains("type") && obj["type"].toString() == "chat") {
+      QString senderName = obj["senderName"].toString();
+      QString content = obj["content"].toString();
+      emit manager->chatMessageReceived(identity, senderName, content);
     }
   }
 }
@@ -359,7 +385,8 @@ void LiveKitManager::joinRoom(const QString &roomName,
     m_isConnecting = true;
     emit connectionStateChanged();
 
-    QTimer::singleShot(500, this, [this]() {
+    // 【关键修复】增加延迟到 1500ms，确保 SDK 完全清理
+    QTimer::singleShot(1500, this, [this]() {
       qDebug() << "[LiveKitManager] 延时后请求新房间 Token";
       requestToken(m_pendingRoom, m_pendingUser);
     });
@@ -422,23 +449,42 @@ void LiveKitManager::leaveRoom() {
   // 清除待处理的 VideoSink 缓存
   m_pendingVideoSinks.clear();
 
-  // 【重要】在销毁旧 Room 之前，先移除 delegate
+  // 【重要】在销毁旧 Room 之前，先禁用 delegate 并移除
   // 避免销毁过程中触发回调导致崩溃
+  if (m_delegate) {
+    // 【关键修复】禁用 delegate，让所有回调立即返回
+    // 这比销毁 delegate 更安全，不会导致 SDK 内部内存问题
+    m_delegate->enabled.store(false);
+    qDebug() << "[LiveKitManager] Delegate 已禁用";
+  }
   if (m_room) {
     m_room->setDelegate(nullptr);
   }
 
+  // 【关键修复】在销毁 Room 之前先等待一下
+  // 给 SDK 后台线程时间来完成当前正在处理的事件
+  qDebug() << "[LiveKitManager] 等待 SDK 事件处理完成...";
+  QThread::msleep(500);
+
   // 重新创建 Room 对象（SDK 没有 disconnect 方法，需要重新创建）
   // 旧的 Room 会在这里被销毁，触发 SDK 内部的断开连接流程
+  qDebug() << "[LiveKitManager] 销毁旧 Room...";
   m_room.reset();
 
   // 【关键修复】给 SDK 更多时间完成内部清理
   // SDK 后台线程可能仍在处理旧 Room 的事件回调
-  // 500ms 确保所有后台任务完成，避免新 Room 初始化时产生状态冲突
-  QThread::msleep(500);
+  // 增加到 2000ms 确保所有后台任务完成，避免新 Room 初始化时产生状态冲突
+  // LiveKit SDK 的 Rust FFI 层需要足够时间清理资源
+  qDebug() << "[LiveKitManager] 等待 SDK 完全清理 (2000ms)...";
+  QThread::msleep(2000);
 
   // 创建新的 Room 对象
+  qDebug() << "[LiveKitManager] 创建新 Room...";
   m_room = std::make_unique<livekit::Room>();
+
+  // 【关键修复】先不启用 delegate，等到连接成功后才启用
+  // 这可以避免旧的 SDK 事件在连接过程中触发回调
+  // delegate 的 enabled 仍然是 false
   m_room->setDelegate(m_delegate.get());
 
   m_isConnected = false;
@@ -620,7 +666,20 @@ void LiveKitManager::connectToRoom(const QString &token) {
 
     // 【安全措施】在 Connect 前短暂等待，确保 SDK 内部状态稳定
     // 这可以避免旧 Room 的事件回调与新连接产生冲突
-    QThread::msleep(100);
+    QThread::msleep(200);
+
+    // 【安全检查】确保 Room 对象仍然有效
+    if (!m_room) {
+      qWarning() << "[LiveKitManager] Room 对象已失效，取消连接";
+      QMetaObject::invokeMethod(
+          this,
+          [this]() {
+            m_isConnecting = false;
+            emit connectionStateChanged();
+          },
+          Qt::QueuedConnection);
+      return;
+    }
 
     bool success = m_room->Connect(url, tokenStr, options);
 
@@ -630,6 +689,14 @@ void LiveKitManager::connectToRoom(const QString &token) {
         [this, success]() {
           if (success) {
             qDebug() << "[LiveKitManager] 连接成功!";
+
+            // 【关键修复】连接成功后才启用 delegate
+            // 这确保了旧的 SDK 事件不会在连接过程中触发回调
+            if (m_delegate) {
+              m_delegate->enabled.store(true);
+              qDebug() << "[LiveKitManager] Delegate 已重新启用";
+            }
+
             m_isConnected = true;
             m_isConnecting = false;
             m_currentRoom = m_pendingRoom;
