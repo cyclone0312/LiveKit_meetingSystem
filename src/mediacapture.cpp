@@ -383,12 +383,8 @@ void MediaCapture::resetLiveKitSources() {
   m_lkVideoSource.reset();
   m_lkAudioSource.reset();
 
-  // 【关键修复原理：优雅退出 - 第三步】
-  // 停车等待（Graceful Wait）：给后台线程足够的时间（300ms）来"刹车"。
-  // 因为后台线程的 captureFrame 调用设置了 100ms 超时，
-  // 300ms 足够让已经在运行的任务安全结束。
-  // 如果没有这个等待，主线程销毁资源时，后台线程可能还在强行写入，导致崩溃。
-  QThread::msleep(300);
+  // 给后台线程足够的时间来完成当前操作
+  QThread::msleep(100);
 
   // 创建全新的 LiveKit 源
   m_lkVideoSource =

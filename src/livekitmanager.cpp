@@ -385,8 +385,8 @@ void LiveKitManager::joinRoom(const QString &roomName,
     m_isConnecting = true;
     emit connectionStateChanged();
 
-    // 【关键修复】增加延迟到 1500ms，确保 SDK 完全清理
-    QTimer::singleShot(1500, this, [this]() {
+    // 【关键修复】延迟后重新连接
+    QTimer::singleShot(500, this, [this]() {
       qDebug() << "[LiveKitManager] 延时后请求新房间 Token";
       requestToken(m_pendingRoom, m_pendingUser);
     });
@@ -461,22 +461,18 @@ void LiveKitManager::leaveRoom() {
     m_room->setDelegate(nullptr);
   }
 
-  // 【关键修复】在销毁 Room 之前先等待一下
   // 给 SDK 后台线程时间来完成当前正在处理的事件
   qDebug() << "[LiveKitManager] 等待 SDK 事件处理完成...";
-  QThread::msleep(500);
+  QThread::msleep(100);
 
   // 重新创建 Room 对象（SDK 没有 disconnect 方法，需要重新创建）
   // 旧的 Room 会在这里被销毁，触发 SDK 内部的断开连接流程
   qDebug() << "[LiveKitManager] 销毁旧 Room...";
   m_room.reset();
 
-  // 【关键修复】给 SDK 更多时间完成内部清理
-  // SDK 后台线程可能仍在处理旧 Room 的事件回调
-  // 增加到 2000ms 确保所有后台任务完成，避免新 Room 初始化时产生状态冲突
-  // LiveKit SDK 的 Rust FFI 层需要足够时间清理资源
-  qDebug() << "[LiveKitManager] 等待 SDK 完全清理 (2000ms)...";
-  QThread::msleep(2000);
+  // 给 SDK 更多时间完成内部清理
+  qDebug() << "[LiveKitManager] 等待 SDK 完全清理 (500ms)...";
+  QThread::msleep(500);
 
   // 创建新的 Room 对象
   qDebug() << "[LiveKitManager] 创建新 Room...";
@@ -664,9 +660,8 @@ void LiveKitManager::connectToRoom(const QString &token) {
   QtConcurrent::run([this, url, tokenStr, options]() {
     qDebug() << "[LiveKitManager] 后台线程开始连接...";
 
-    // 【安全措施】在 Connect 前短暂等待，确保 SDK 内部状态稳定
-    // 这可以避免旧 Room 的事件回调与新连接产生冲突
-    QThread::msleep(200);
+    // 在 Connect 前短暂等待，确保 SDK 内部状态稳定
+    QThread::msleep(50);
 
     // 【安全检查】确保 Room 对象仍然有效
     if (!m_room) {
@@ -787,8 +782,7 @@ void LiveKitManager::publishCamera() {
     m_mediaCapture->startCamera();
 
     // 等待摄像头启动完成后再发布
-    // 使用单次定时器延迟发布
-    QTimer::singleShot(500, this, [this]() { doPublishCameraTrack(); });
+    QTimer::singleShot(200, this, [this]() { doPublishCameraTrack(); });
     return;
   }
 
@@ -1000,7 +994,7 @@ void LiveKitManager::publishScreenShare() {
     m_screenCapture->startCapture();
 
     // 等待屏幕捕获启动完成后再发布
-    QTimer::singleShot(500, this, [this]() { doPublishScreenShareTrack(); });
+    QTimer::singleShot(200, this, [this]() { doPublishScreenShareTrack(); });
     return;
   }
 

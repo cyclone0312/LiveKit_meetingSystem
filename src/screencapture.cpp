@@ -4,6 +4,7 @@
  */
 
 #include "screencapture.h"
+#include <QCoreApplication>
 #include <QDebug>
 #include <QGuiApplication>
 #include <QImage>
@@ -191,16 +192,20 @@ void ScreenCapture::stopCapture() {
 
   qDebug() << "[ScreenCapture] 停止屏幕捕获...";
 
-  // 首先停止定时器，防止新的帧捕获
-  m_captureTimer->stop();
+  // 【关键】首先设置 m_isActive = false，阻止 captureFrame 继续执行
   m_isActive = false;
+
+  // 停止定时器，防止新的帧捕获
+  m_captureTimer->stop();
 
   // 【关键】清除外部 VideoSink 引用，防止访问已销毁的 QML 对象
   m_externalVideoSink.clear();
 
-  // 【关键】等待一小段时间，确保正在进行的帧捕获完成
-  // 这是必要的，因为定时器回调可能正在执行中
-  QThread::msleep(100);
+  // 【关键】处理事件循环，确保任何待处理的定时器事件被处理
+  QCoreApplication::processEvents();
+
+  // 等待帧捕获完成
+  QThread::msleep(50);
 
 #ifdef Q_OS_WIN
   cleanupDXGI();
@@ -338,7 +343,14 @@ void ScreenCapture::cleanupDXGI() {
 }
 
 bool ScreenCapture::captureFrame() {
-  if (!m_deskDupl || !m_screenSource) {
+  // 【关键】首先检查是否仍然处于活跃状态
+  // 这可以防止在 stopCapture 期间继续访问 DXGI 资源
+  if (!m_isActive) {
+    return false;
+  }
+
+  // 检查所有必要的 DXGI 资源是否有效
+  if (!m_deskDupl || !m_screenSource || !m_d3dContext || !m_stagingTexture) {
     return false;
   }
 
