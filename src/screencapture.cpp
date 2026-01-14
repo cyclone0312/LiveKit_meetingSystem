@@ -385,7 +385,7 @@ bool ScreenCapture::captureFrame() {
   }
 
   // 创建 LiveKit 视频帧（BGRA 格式）
-  livekit::LKVideoFrame lkFrame = livekit::LKVideoFrame::create(
+  livekit::VideoFrame lkFrame = livekit::VideoFrame::create(
       m_captureWidth, m_captureHeight, livekit::VideoBufferType::BGRA);
 
   // 复制像素数据（注意行对齐）

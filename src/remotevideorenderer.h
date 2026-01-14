@@ -75,7 +75,7 @@ private:
   /**
    * @brief 将 LiveKit 视频帧转换为 Qt 视频帧
    */
-  QVideoFrame convertFrame(const livekit::LKVideoFrame &lkFrame);
+  QVideoFrame convertFrame(const livekit::VideoFrame &lkFrame);
 
   /**
    * @brief 渲染循环（在工作线程中运行）

@@ -61,14 +61,14 @@ void VideoFrameHandler::handleVideoFrame(const QVideoFrame &frame) {
     // 转换为 ARGB32 格式
     QImage argbImage = image.convertToFormat(QImage::Format_ARGB32);
 
-    // 创建 LiveKit LKVideoFrame
-    // SDK 使用 LKVideoFrame::create() 分配缓冲区
+    // 创建 LiveKit VideoFrame
+    // SDK 使用 VideoFrame::create() 分配缓冲区
     int frameWidth = argbImage.width();
     int frameHeight = argbImage.height();
 
     // 创建 BGRA 格式的帧（与 Qt Format_ARGB32 的实际内存布局匹配）
     // 注意：Qt 的 Format_ARGB32 在 Windows 小端系统上内存布局是 B-G-R-A
-    livekit::LKVideoFrame lkFrame = livekit::LKVideoFrame::create(
+    livekit::VideoFrame lkFrame = livekit::VideoFrame::create(
         frameWidth, frameHeight, livekit::VideoBufferType::BGRA);
 
     // 复制像素数据

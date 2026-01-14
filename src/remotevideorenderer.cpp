@@ -150,7 +150,7 @@ void RemoteVideoRenderer::renderLoop() {
 }
 
 QVideoFrame
-RemoteVideoRenderer::convertFrame(const livekit::LKVideoFrame &lkFrame) {
+RemoteVideoRenderer::convertFrame(const livekit::VideoFrame &lkFrame) {
   int width = lkFrame.width();
   int height = lkFrame.height();
 

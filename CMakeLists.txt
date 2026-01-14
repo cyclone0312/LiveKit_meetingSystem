@@ -10,18 +10,17 @@ set(CMAKE_AUTOUIC ON)
 
 # ==================== 1. LiveKit SDK 路径配置 ====================
 
-# [Release 配置] 保持原有的路径结构
-set(LIVEKIT_RELEASE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/livekit-sdk-windows-x64")
-set(LIVEKIT_RELEASE_LIB  "${LIVEKIT_RELEASE_ROOT}/lib/windows-x64/release")
-set(LIVEKIT_RELEASE_BIN  "${LIVEKIT_RELEASE_ROOT}/bin/release")
+# [Release 配置] 新路径 - extend 目录下
+set(LIVEKIT_RELEASE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/extend/livekit-sdk-windows")
+set(LIVEKIT_RELEASE_LIB  "${LIVEKIT_RELEASE_ROOT}/lib")
+set(LIVEKIT_RELEASE_BIN  "${LIVEKIT_RELEASE_ROOT}/lib")  # DLL 也在 lib 目录
 
-# [Debug 配置] 新增路径 (假设你将Debug文件夹放在项目根目录)
-# 注意：根据你的截图，Debug 的 .lib 和 .dll 都在同一个 lib 文件夹下
-set(LIVEKIT_DEBUG_ROOT   "${CMAKE_CURRENT_SOURCE_DIR}/livekit-sdk-windows-x64-debug")
+# [Debug 配置] 新路径 - extend 目录下
+set(LIVEKIT_DEBUG_ROOT   "${CMAKE_CURRENT_SOURCE_DIR}/extend/livekit-sdk-windows-x64-debug")
 set(LIVEKIT_DEBUG_LIB    "${LIVEKIT_DEBUG_ROOT}/lib")
-set(LIVEKIT_DEBUG_BIN    "${LIVEKIT_DEBUG_ROOT}/lib") # 截图显示 dll 也在 lib 文件夹里
+set(LIVEKIT_DEBUG_BIN    "${LIVEKIT_DEBUG_ROOT}/lib")
 
-# 头文件路径 (Debug 和 Release 通用)
+# 头文件路径 (使用 Release SDK 的 include)
 set(LIVEKIT_INCLUDE_DIR  "${LIVEKIT_RELEASE_ROOT}/include")
 
 # 查找Qt包
@@ -75,18 +74,17 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 )
 
 # 核心修改：使用 optimized (Release) 和 debug (Debug) 关键字区分链接库
+# 新版 Release SDK 的 abseil/protobuf 已内嵌到 livekit.dll，无需单独链接
 target_link_libraries(${PROJECT_NAME} PRIVATE
     # --- Release 模式用 ---
     optimized ${LIVEKIT_RELEASE_LIB}/livekit.lib
     optimized ${LIVEKIT_RELEASE_LIB}/livekit_ffi.dll.lib
-    optimized ${LIVEKIT_RELEASE_LIB}/libprotobuf.lib
-    optimized ${LIVEKIT_RELEASE_LIB}/abseil_dll.lib
     
-    # --- Debug 模式用 (根据你的截图调整文件名) ---
+    # --- Debug 模式用 ---
     debug ${LIVEKIT_DEBUG_LIB}/livekit.lib
     debug ${LIVEKIT_DEBUG_LIB}/livekit_ffi.dll.lib
-    debug ${LIVEKIT_DEBUG_LIB}/libprotobufd.lib      # 注意：这里是带 d 的库
-    debug ${LIVEKIT_DEBUG_LIB}/abseil_dll.lib        # 截图显示 debug 版 abseil lib 名字没变
+    debug ${LIVEKIT_DEBUG_LIB}/libprotobufd.lib
+    debug ${LIVEKIT_DEBUG_LIB}/abseil_dll.lib
 )
 
 # ==================== 3. 自动复制 DLL 到输出目录 ====================
@@ -94,25 +92,24 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 # 含义：如果是 Debug 模式，使用路径 A，否则使用路径 B
 
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-    # 1. 复制 livekit_ffi.dll
+    # 1. 【新增】复制 livekit.dll (Release 版新增的动态库)
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${LIVEKIT_RELEASE_BIN}/livekit.dll"
+        $<TARGET_FILE_DIR:${PROJECT_NAME}>
+    
+    # 2. 复制 livekit_ffi.dll
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "$<IF:$<CONFIG:Debug>,${LIVEKIT_DEBUG_BIN}/livekit_ffi.dll,${LIVEKIT_RELEASE_BIN}/livekit_ffi.dll>"
         $<TARGET_FILE_DIR:${PROJECT_NAME}>
     
-    # 2. 复制 abseil_dll.dll
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "$<IF:$<CONFIG:Debug>,${LIVEKIT_DEBUG_BIN}/abseil_dll.dll,${LIVEKIT_RELEASE_BIN}/abseil_dll.dll>"
+    # 3. 复制 abseil_dll.dll (仅 Debug 需要)
+    COMMAND ${CMAKE_COMMAND} -E $<IF:$<CONFIG:Debug>,copy_if_different,true>
+        "${LIVEKIT_DEBUG_BIN}/abseil_dll.dll"
         $<TARGET_FILE_DIR:${PROJECT_NAME}>
         
-    # 3. 复制 protobuf (Debug版文件名多了个d，需要区分源文件名)
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "$<IF:$<CONFIG:Debug>,${LIVEKIT_DEBUG_BIN}/libprotobufd.dll,${LIVEKIT_RELEASE_BIN}/libprotobuf.dll>"
-        $<TARGET_FILE_DIR:${PROJECT_NAME}>
-
-    # 4. 复制 SDL3.dll (假设 Debug 包里没有，或者都用同一个，暂时只从 Release 复制)
-    # 如果你的 Debug 文件夹里也有 SDL3.dll，可以参考上面的写法修改
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${LIVEKIT_RELEASE_BIN}/SDL3.dll"
+    # 4. 复制 libprotobufd.dll (仅 Debug 需要)
+    COMMAND ${CMAKE_COMMAND} -E $<IF:$<CONFIG:Debug>,copy_if_different,true>
+        "${LIVEKIT_DEBUG_BIN}/libprotobufd.dll"
         $<TARGET_FILE_DIR:${PROJECT_NAME}>
 
     COMMENT "Copying LiveKit SDK DLLs based on build configuration..."
