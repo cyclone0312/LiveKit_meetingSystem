@@ -308,12 +308,47 @@ LiveKitManager::LiveKitManager(QObject *parent)
 }
 
 LiveKitManager::~LiveKitManager() {
+  qDebug() << "[LiveKitManager] 析构开始...";
+
+  // 1. 如果还连接着，先离开房间
   if (m_isConnected) {
     leaveRoom();
   }
 
-  // 注意：不要在这里调用 livekit::shutdown()
-  // 因为可能还有其他 LiveKitManager 实例
+  // 2. 【关键】禁用 delegate，防止析构过程中的回调
+  if (m_delegate) {
+    m_delegate->enabled.store(false);
+    qDebug() << "[LiveKitManager] Delegate 已禁用";
+  }
+
+  // 3. 【关键】先断开 delegate 连接
+  if (m_room) {
+    m_room->setDelegate(nullptr);
+    qDebug() << "[LiveKitManager] Delegate 已断开";
+  }
+
+  // 4. 【关键】先销毁 Room，让 SDK 清理其内部对 Track/Source 的引用
+  // 这必须在销毁 MediaCapture/ScreenCapture 之前完成
+  // 否则 SDK 后台线程可能访问已释放的 Track/Source 导致崩溃
+  m_room.reset();
+  qDebug() << "[LiveKitManager] Room 已销毁";
+
+  // 5. 给 SDK 后台线程时间完成清理
+  QThread::msleep(200);
+
+  // 6. 销毁 delegate
+  m_delegate.reset();
+  qDebug() << "[LiveKitManager] Delegate 已销毁";
+
+  // 7. 现在安全地销毁 MediaCapture 和 ScreenCapture
+  // 它们持有的 Track/Source 已经没有被 SDK 引用了
+  m_screenCapture.reset();
+  qDebug() << "[LiveKitManager] ScreenCapture 已销毁";
+
+  m_mediaCapture.reset();
+  qDebug() << "[LiveKitManager] MediaCapture 已销毁";
+
+  qDebug() << "[LiveKitManager] 析构完成";
 }
 
 // ==================== 属性 Getter ====================
