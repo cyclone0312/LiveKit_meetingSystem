@@ -294,6 +294,8 @@ signals:
   // 用户认证信号
   void registerSuccess();
   void registerFailed(const QString &error);
+  void loginSuccess(const QString &username);
+  void loginFailed(const QString &error);
 
   // 会议历史信号
   void meetingHistoryReceived(const QVariantList &history);

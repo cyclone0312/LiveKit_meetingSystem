@@ -432,6 +432,40 @@ void LiveKitManager::registerUser(const QString &username,
   });
 }
 
+void LiveKitManager::loginUser(const QString &username,
+                               const QString &password) {
+  qDebug() << "[LiveKitManager] 正在登录用户:" << username;
+
+  QUrl url(m_tokenServerUrl + "/api/login");
+  QNetworkRequest request(url);
+  request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+
+  QJsonObject body;
+  body["username"] = username;
+  body["password"] = password;
+
+  QByteArray jsonData = QJsonDocument(body).toJson(QJsonDocument::Compact);
+  QNetworkReply *reply = m_networkManager->post(request, jsonData);
+
+  connect(reply, &QNetworkReply::finished, this, [this, reply, username]() {
+    QByteArray responseData = reply->readAll();
+    QJsonDocument doc = QJsonDocument::fromJson(responseData);
+
+    if (reply->error() == QNetworkReply::NoError) {
+      qDebug() << "[LiveKitManager] 登录成功:" << username;
+      emit loginSuccess(username);
+    } else {
+      QString errorMsg = "登录失败";
+      if (doc.isObject() && doc.object().contains("error")) {
+        errorMsg = doc.object()["error"].toString();
+      }
+      qWarning() << "[LiveKitManager] 登录失败:" << errorMsg;
+      emit loginFailed(errorMsg);
+    }
+    reply->deleteLater();
+  });
+}
+
 void LiveKitManager::fetchMeetingHistory(const QString &username) {
   qDebug() << "[LiveKitManager] 正在获取会议历史:" << username;
 

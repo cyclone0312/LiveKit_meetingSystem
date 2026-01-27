@@ -317,12 +317,12 @@ void MeetingController::login(const QString &username,
     return;
   }
 
-  setUserName(username);
-  m_userPassword = password;
-  m_liveKitManager->setUserPassword(password);
+  // 保存待验证的用户名和密码
+  m_pendingUsername = username;
+  m_pendingPassword = password;
 
-  emit loginSuccess();
-  emit showMessage("登录成功，欢迎 " + username);
+  // 调用后端 API 进行真正的登录验证
+  m_liveKitManager->loginUser(username, password);
 }
 
 void MeetingController::registerUser(const QString &username,
@@ -419,6 +419,31 @@ void MeetingController::setupLiveKitConnections() {
           [this](const QString &error) {
             emit registerFailed(error);
             emit showMessage("注册失败: " + error);
+          });
+
+  // 登录结果处理（后端验证）
+  connect(m_liveKitManager, &LiveKitManager::loginSuccess, this,
+          [this](const QString &username) {
+            // 后端验证成功，设置用户凭据
+            setUserName(m_pendingUsername);
+            m_userPassword = m_pendingPassword;
+            m_liveKitManager->setUserPassword(m_pendingPassword);
+
+            // 清空待验证凭据
+            m_pendingUsername.clear();
+            m_pendingPassword.clear();
+
+            emit loginSuccess();
+            emit showMessage("登录成功，欢迎 " + username);
+          });
+  connect(m_liveKitManager, &LiveKitManager::loginFailed, this,
+          [this](const QString &error) {
+            // 清空待验证凭据
+            m_pendingUsername.clear();
+            m_pendingPassword.clear();
+
+            emit loginFailed(error);
+            emit showMessage("登录失败: " + error);
           });
 
   qDebug() << "[MeetingController] LiveKit 信号连接已设置";

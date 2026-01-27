@@ -169,6 +169,10 @@ private:
 
   // 用户密码（用于认证）
   QString m_userPassword;
+
+  // 待验证的用户凭据
+  QString m_pendingUsername;
+  QString m_pendingPassword;
 };
 
 #endif // MEETINGCONTROLLER_H
