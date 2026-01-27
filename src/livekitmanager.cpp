@@ -6,12 +6,14 @@
 #include "livekitmanager.h"
 #include "mediacapture.h"
 #include <QDebug>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QThread>
 #include <QTimer>
+#include <QUrlQuery>
 #include <QtConcurrent/QtConcurrent>
 
 // ==================== 配置常量 ====================
@@ -426,6 +428,58 @@ void LiveKitManager::registerUser(const QString &username,
       qWarning() << "[LiveKitManager] 注册失败:" << errorMsg;
       emit registerFailed(errorMsg);
     }
+    reply->deleteLater();
+  });
+}
+
+void LiveKitManager::fetchMeetingHistory(const QString &username) {
+  qDebug() << "[LiveKitManager] 正在获取会议历史:" << username;
+
+  QUrl url(m_tokenServerUrl + "/api/history");
+  QUrlQuery query;
+  query.addQueryItem("username", username);
+  url.setQuery(query);
+
+  QNetworkRequest request(url);
+  QNetworkReply *reply = m_networkManager->get(request);
+
+  connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+    QByteArray responseData = reply->readAll();
+    QJsonDocument doc = QJsonDocument::fromJson(responseData);
+
+    if (reply->error() != QNetworkReply::NoError) {
+      QString errorMsg = "获取会议历史失败";
+      if (doc.isObject() && doc.object().contains("error")) {
+        errorMsg = doc.object()["error"].toString();
+      }
+      qWarning() << "[LiveKitManager] 获取会议历史失败:" << errorMsg;
+      emit meetingHistoryFailed(errorMsg);
+      reply->deleteLater();
+      return;
+    }
+
+    if (!doc.isObject() || !doc.object().contains("history")) {
+      qWarning() << "[LiveKitManager] 会议历史响应格式错误";
+      emit meetingHistoryFailed("响应格式错误");
+      reply->deleteLater();
+      return;
+    }
+
+    QJsonArray historyArray = doc.object()["history"].toArray();
+    QVariantList historyList;
+
+    for (const QJsonValue &item : historyArray) {
+      QJsonObject obj = item.toObject();
+      QVariantMap meeting;
+      meeting["roomName"] = obj["room_name"].toString();
+      meeting["startTime"] = obj["start_time"].toString();
+      meeting["duration"] = obj["duration_seconds"].toInt();
+      historyList.append(meeting);
+    }
+
+    qDebug() << "[LiveKitManager] 成功获取会议历史, 共" << historyList.size()
+             << "条记录";
+    emit meetingHistoryReceived(historyList);
     reply->deleteLater();
   });
 }

@@ -10,6 +10,63 @@ Page {
     signal createMeeting(string title)
     signal logout()
     
+    // 连接 liveKitManager 会议历史信号
+    Connections {
+        target: meetingController ? meetingController.liveKitManager : null
+        
+        function onMeetingHistoryReceived(history) {
+            recentMeetingsModel.clear()
+            for (var i = 0; i < history.length; i++) {
+                var meeting = history[i]
+                // 格式化时长
+                var durationStr = formatDuration(meeting.duration)
+                // 格式化时间
+                var timeStr = formatDateTime(meeting.startTime)
+                recentMeetingsModel.append({
+                    "title": meeting.roomName,
+                    "meetingId": meeting.roomName,
+                    "time": timeStr,
+                    "duration": durationStr
+                })
+            }
+            console.log("[HomePage] 加载了", history.length, "条会议记录")
+        }
+        
+        function onMeetingHistoryFailed(error) {
+            console.log("[HomePage] 获取会议历史失败:", error)
+        }
+    }
+    
+    // 页面加载时获取会议历史
+    Component.onCompleted: {
+        if (meetingController && meetingController.userName && meetingController.liveKitManager) {
+            meetingController.liveKitManager.fetchMeetingHistory(meetingController.userName)
+        }
+    }
+    
+    // 格式化时长（秒转为可读字符串）
+    function formatDuration(seconds) {
+        if (!seconds || seconds === 0) return "未知"
+        var hours = Math.floor(seconds / 3600)
+        var minutes = Math.floor((seconds % 3600) / 60)
+        if (hours > 0) {
+            return hours + "小时" + (minutes > 0 ? minutes + "分" : "")
+        } else if (minutes > 0) {
+            return minutes + "分钟"
+        } else {
+            return seconds + "秒"
+        }
+    }
+    
+    // 格式化日期时间
+    function formatDateTime(dateTimeStr) {
+        if (!dateTimeStr) return "未知时间"
+        // 服务器返回的格式可能是 ISO 8601
+        var date = new Date(dateTimeStr)
+        if (isNaN(date.getTime())) return dateTimeStr
+        return Qt.formatDateTime(date, "yyyy-MM-dd hh:mm")
+    }
+    
     background: Rectangle {
         color: "#1A1A2E"
     }
@@ -479,30 +536,23 @@ Page {
                         
                         // 会议列表
                         ListView {
+                            id: recentMeetingsListView
                             Layout.fillWidth: true
                             Layout.fillHeight: true
                             clip: true
                             spacing: 8
                             
                             model: ListModel {
-                                ListElement {
-                                    title: "周例会"
-                                    meetingId: "123456789"
-                                    time: "2024-01-15 14:00"
-                                    duration: "1小时30分"
-                                }
-                                ListElement {
-                                    title: "项目评审会"
-                                    meetingId: "987654321"
-                                    time: "2024-01-14 10:00"
-                                    duration: "2小时"
-                                }
-                                ListElement {
-                                    title: "团队分享会"
-                                    meetingId: "456789123"
-                                    time: "2024-01-12 15:30"
-                                    duration: "45分钟"
-                                }
+                                id: recentMeetingsModel
+                            }
+                            
+                            // 加载状态
+                            Text {
+                                anchors.centerIn: parent
+                                text: parent.count === 0 ? "暂无会议记录" : ""
+                                font.pixelSize: 14
+                                color: "#808090"
+                                visible: parent.count === 0
                             }
                             
                             delegate: Rectangle {

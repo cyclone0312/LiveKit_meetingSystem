@@ -157,6 +157,19 @@ public slots:
   void registerUser(const QString &username, const QString &password);
 
   /**
+   * @brief 用户登录验证
+   * @param username 用户名
+   * @param password 密码
+   */
+  void loginUser(const QString &username, const QString &password);
+
+  /**
+   * @brief 获取用户的会议历史记录
+   * @param username 用户名
+   */
+  void fetchMeetingHistory(const QString &username);
+
+  /**
    * @brief 请求 Token 并加入房间
    * @param roomName 房间名称（会议ID）
    * @param userName 用户名称
@@ -281,6 +294,10 @@ signals:
   // 用户认证信号
   void registerSuccess();
   void registerFailed(const QString &error);
+
+  // 会议历史信号
+  void meetingHistoryReceived(const QVariantList &history);
+  void meetingHistoryFailed(const QString &error);
 
   // 远程媒体信号
   void remoteVideoSinkReady(const QString &participantId, QVideoSink *sink);
