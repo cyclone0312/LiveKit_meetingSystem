@@ -117,16 +117,8 @@ ApplicationWindow {
     StackView {
         id: stackView
         anchors.fill: parent
-        // 开发阶段：直接进入 homePage 跳过登录
-        // 正式发布时改回 loginPage
-        initialItem: homePage
-        
-        // 开发阶段：设置默认用户名（跳过登录时使用）
-        // 【注意】每个实例需要唯一的用户名，否则 LiveKit 会踢出同名用户
-        Component.onCompleted: {
-            var randomSuffix = Math.floor(Math.random() * 1000)
-            meetingController.userName = "测试用户_" + randomSuffix
-        }
+        // 正式发布：从登录页开始
+        initialItem: loginPage
         
         // 过渡动画
         pushEnter: Transition {

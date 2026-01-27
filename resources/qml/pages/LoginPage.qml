@@ -9,6 +9,35 @@ Page {
     signal loginSuccess()
     signal goToRegister()
     
+    // 连接 meetingController 登录结果信号
+    Connections {
+        target: meetingController
+        
+        function onLoginSuccess() {
+            // 如果勾选了记住密码，保存凭据
+            if (rememberCheckBox.checked) {
+                meetingController.saveCredentials(usernameField.text, passwordField.text)
+            } else {
+                meetingController.clearSavedCredentials()
+            }
+            loginPage.loginSuccess()
+        }
+        
+        function onLoginFailed(reason) {
+            // 显示错误提示
+            console.log("登录失败:", reason)
+        }
+    }
+    
+    // 页面加载时恢复保存的凭据
+    Component.onCompleted: {
+        if (meetingController.hasRememberedPassword()) {
+            usernameField.text = meetingController.getSavedUsername()
+            passwordField.text = meetingController.getSavedPassword()
+            rememberCheckBox.checked = true
+        }
+    }
+    
     background: Rectangle {
         color: "#1A1A2E"
     }
@@ -218,10 +247,8 @@ Page {
                         return
                     }
                     
-                    // 简单验证，实际应用中应该进行真正的身份验证
-                    if (meetingController.login(usernameField.text, passwordField.text)) {
-                        loginSuccess()
-                    }
+                    // 调用登录，通过信号处理结果
+                    meetingController.login(usernameField.text, passwordField.text)
                 }
             }
             

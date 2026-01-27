@@ -9,6 +9,22 @@ Page {
     signal registerSuccess()
     signal goToLogin()
     
+    // 连接 meetingController 注册结果信号
+    Connections {
+        target: meetingController
+        
+        function onRegisterSuccess() {
+            registerButton.isRegistering = false
+            // 注册成功后跳转回登录页
+            goToLogin()
+        }
+        
+        function onRegisterFailed(error) {
+            registerButton.isRegistering = false
+            errorText.text = error
+        }
+    }
+    
     background: Rectangle {
         color: "#1A1A2E"
     }
@@ -273,10 +289,12 @@ Page {
                 id: registerButton
                 Layout.fillWidth: true
                 Layout.preferredHeight: 46
-                text: "注 册"
+                text: isRegistering ? "注册中..." : "注 册"
                 font.pixelSize: 16
                 font.bold: true
-                enabled: canRegister()
+                enabled: canRegister() && !isRegistering
+                
+                property bool isRegistering: false
                 
                 function canRegister() {
                     return usernameField.text.trim().length > 0 &&
@@ -314,14 +332,12 @@ Page {
                         return
                     }
                     
-                    // 模拟注册成功
+                    // 调用后端注册接口
                     errorText.text = ""
-                    
-                    // 注册成功后自动登录
+                    isRegistering = true
                     if (meetingController) {
-                        meetingController.login(usernameField.text, passwordField.text)
+                        meetingController.registerUser(usernameField.text, passwordField.text)
                     }
-                    registerSuccess()
                 }
             }
             

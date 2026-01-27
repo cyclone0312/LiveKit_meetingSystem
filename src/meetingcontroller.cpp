@@ -4,8 +4,8 @@
 #include <QDebug>
 #include <QGuiApplication>
 #include <QRandomGenerator>
+#include <QSettings>
 #include <QTimer>
-
 
 MeetingController::MeetingController(QObject *parent)
     : QObject(parent), m_isMicOn(false), m_isCameraOn(false),
@@ -309,18 +309,26 @@ void MeetingController::switchView(const QString &viewType) {
   emit showMessage("切换到" + viewType + "视图");
 }
 
-bool MeetingController::login(const QString &username,
+void MeetingController::login(const QString &username,
                               const QString &password) {
-  // 简单的登录模拟
+  // 存储用户名和密码
   if (username.isEmpty() || password.isEmpty()) {
     emit loginFailed("用户名或密码不能为空");
-    return false;
+    return;
   }
 
   setUserName(username);
+  m_userPassword = password;
+  m_liveKitManager->setUserPassword(password);
+
   emit loginSuccess();
   emit showMessage("登录成功，欢迎 " + username);
-  return true;
+}
+
+void MeetingController::registerUser(const QString &username,
+                                     const QString &password) {
+  qDebug() << "[MeetingController] 用户注册:" << username;
+  m_liveKitManager->registerUser(username, password);
 }
 
 void MeetingController::logout() {
@@ -329,6 +337,40 @@ void MeetingController::logout() {
   }
   setUserName("");
   emit showMessage("已退出登录");
+}
+
+// ==================== 保存密码功能 ====================
+
+void MeetingController::saveCredentials(const QString &username,
+                                        const QString &password) {
+  QSettings settings("MeetingApp", "Credentials");
+  settings.setValue("username", username);
+  settings.setValue("password", password);
+  settings.setValue("remembered", true);
+  qDebug() << "[MeetingController] 凭据已保存";
+}
+
+void MeetingController::clearSavedCredentials() {
+  QSettings settings("MeetingApp", "Credentials");
+  settings.remove("username");
+  settings.remove("password");
+  settings.setValue("remembered", false);
+  qDebug() << "[MeetingController] 凭据已清除";
+}
+
+QString MeetingController::getSavedUsername() const {
+  QSettings settings("MeetingApp", "Credentials");
+  return settings.value("username", "").toString();
+}
+
+QString MeetingController::getSavedPassword() const {
+  QSettings settings("MeetingApp", "Credentials");
+  return settings.value("password", "").toString();
+}
+
+bool MeetingController::hasRememberedPassword() const {
+  QSettings settings("MeetingApp", "Credentials");
+  return settings.value("remembered", false).toBool();
 }
 
 void MeetingController::updateMeetingDuration() {
@@ -367,6 +409,17 @@ void MeetingController::setupLiveKitConnections() {
   // 错误处理
   connect(m_liveKitManager, &LiveKitManager::errorOccurred, this,
           &MeetingController::onLiveKitError);
+
+  // 注册结果处理
+  connect(m_liveKitManager, &LiveKitManager::registerSuccess, this, [this]() {
+    emit registerSuccess();
+    emit showMessage("注册成功！请登录");
+  });
+  connect(m_liveKitManager, &LiveKitManager::registerFailed, this,
+          [this](const QString &error) {
+            emit registerFailed(error);
+            emit showMessage("注册失败: " + error);
+          });
 
   qDebug() << "[MeetingController] LiveKit 信号连接已设置";
 }

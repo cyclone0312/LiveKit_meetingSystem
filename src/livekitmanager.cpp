@@ -391,6 +391,45 @@ void LiveKitManager::setTokenServerUrl(const QString &url) {
   }
 }
 
+void LiveKitManager::setUserPassword(const QString &password) {
+  m_userPassword = password;
+  qDebug() << "[LiveKitManager] 用户密码已设置";
+}
+
+void LiveKitManager::registerUser(const QString &username,
+                                  const QString &password) {
+  qDebug() << "[LiveKitManager] 正在注册用户:" << username;
+
+  QUrl url(m_tokenServerUrl + "/api/register");
+  QNetworkRequest request(url);
+  request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+
+  QJsonObject body;
+  body["username"] = username;
+  body["password"] = password;
+
+  QByteArray jsonData = QJsonDocument(body).toJson(QJsonDocument::Compact);
+  QNetworkReply *reply = m_networkManager->post(request, jsonData);
+
+  connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+    QByteArray responseData = reply->readAll();
+    QJsonDocument doc = QJsonDocument::fromJson(responseData);
+
+    if (reply->error() == QNetworkReply::NoError) {
+      qDebug() << "[LiveKitManager] 注册成功";
+      emit registerSuccess();
+    } else {
+      QString errorMsg = "注册失败";
+      if (doc.isObject() && doc.object().contains("error")) {
+        errorMsg = doc.object()["error"].toString();
+      }
+      qWarning() << "[LiveKitManager] 注册失败:" << errorMsg;
+      emit registerFailed(errorMsg);
+    }
+    reply->deleteLater();
+  });
+}
+
 // ==================== 核心方法 ====================
 
 void LiveKitManager::joinRoom(const QString &roomName,
@@ -627,6 +666,7 @@ void LiveKitManager::requestToken(const QString &roomName,
   QJsonObject requestBody;
   requestBody["roomName"] = roomName;
   requestBody["participantName"] = userName;
+  requestBody["password"] = m_userPassword; // 新增：包含用户密码
 
   QByteArray jsonData =
       QJsonDocument(requestBody).toJson(QJsonDocument::Compact);
@@ -634,9 +674,17 @@ void LiveKitManager::requestToken(const QString &roomName,
   QNetworkReply *reply = m_networkManager->post(request, jsonData);
 
   connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+    QByteArray responseData = reply->readAll();
+    QJsonDocument doc = QJsonDocument::fromJson(responseData);
+
     if (reply->error() != QNetworkReply::NoError) {
-      QString errorStr =
-          QString("Token 请求失败: %1").arg(reply->errorString());
+      // 解析服务器返回的错误信息
+      QString errorStr;
+      if (doc.isObject() && doc.object().contains("error")) {
+        errorStr = doc.object()["error"].toString();
+      } else {
+        errorStr = QString("Token 请求失败: %1").arg(reply->errorString());
+      }
       qWarning() << "[LiveKitManager]" << errorStr;
       setError(errorStr);
       m_isConnecting = false;
@@ -645,9 +693,6 @@ void LiveKitManager::requestToken(const QString &roomName,
       reply->deleteLater();
       return;
     }
-
-    QByteArray responseData = reply->readAll();
-    QJsonDocument doc = QJsonDocument::fromJson(responseData);
 
     if (doc.isNull() || !doc.isObject()) {
       setError("Token 响应格式错误");

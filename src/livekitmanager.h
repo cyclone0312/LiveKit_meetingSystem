@@ -144,6 +144,19 @@ public:
 
 public slots:
   /**
+   * @brief 设置用户密码（登录后调用）
+   * @param password 用户密码
+   */
+  void setUserPassword(const QString &password);
+
+  /**
+   * @brief 用户注册
+   * @param username 用户名
+   * @param password 密码
+   */
+  void registerUser(const QString &username, const QString &password);
+
+  /**
    * @brief 请求 Token 并加入房间
    * @param roomName 房间名称（会议ID）
    * @param userName 用户名称
@@ -265,6 +278,10 @@ signals:
   void tokenReceived(const QString &token);
   void tokenRequestFailed(const QString &reason);
 
+  // 用户认证信号
+  void registerSuccess();
+  void registerFailed(const QString &error);
+
   // 远程媒体信号
   void remoteVideoSinkReady(const QString &participantId, QVideoSink *sink);
   void remoteVideoSinkRemoved(const QString &participantId);
@@ -307,6 +324,7 @@ private:
   QString m_currentUser;
   QString m_currentToken;
   QString m_errorMessage;
+  QString m_userPassword; // 用户密码（用于 Token 请求）
 
   // 待加入信息
   QString m_pendingRoom;
