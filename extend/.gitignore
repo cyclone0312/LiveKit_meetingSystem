@@ -1,0 +1,6 @@
+# LiveKit SDK 自动下载缓存
+.cache/
+
+# 自动下载的 Release SDK（由 cmake/FetchLiveKit.cmake 管理）
+# 如需手动管理 SDK，注释掉下面这行
+livekit-sdk-windows/

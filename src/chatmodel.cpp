@@ -165,7 +165,11 @@ void ChatModel::simulateIncomingMessage()
 
 QString ChatModel::generateMessageId() const
 {
+    // Use const_cast to increment counter in const method
+    // (counter is an implementation detail for uniqueness)
+    int currentCount = m_messageIdCounter;
+    const_cast<ChatModel *>(this)->m_messageIdCounter = currentCount + 1;
     return QString("msg_%1_%2")
         .arg(QDateTime::currentMSecsSinceEpoch())
-        .arg(m_messageIdCounter);
+        .arg(currentCount);
 }

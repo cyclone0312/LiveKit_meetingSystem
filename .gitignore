@@ -1,33 +1,74 @@
-# 编译产生的临时文件夹
+# ==================== 构建产物 ====================
+# 构建输出目录
 build/
 bin/
 debug/
 release/
 
-# CMake 产生的临时文件
+# CMake 生成的文件
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
 Makefile
+*.ninja
+.ninja_deps
+.ninja_log
 
-# Qt Creator/CMake 用户特定配置 (截图里看到了 CMakeLists.txt.user，这个绝对不能传)
+# Qt Creator/CMake 用户特定配置
 *.user
 *.user.*
+CMakeLists.txt.user
 
-# VS Code 配置文件 (通常建议忽略，除非是团队统一配置)
+# ==================== IDE 配置 ====================
+# VS Code
 .vscode/
 
-# 操作系统生成的缩略图文件
-.DS_Store
-Thumbs.db
+# Visual Studio
+*.vcxproj
+*.vcxproj.filters
+*.sln
+*.suo
+*.opensdf
+*.sdf
+.vs/
 
-# 编译生成的可执行文件 (根据你的系统调整，Windows是.exe)
+# Qt Creator 临时文件
+*.pro.user
+*.qmlc
+*.jsc
+
+# ==================== 编译产物 ====================
 *.exe
 *.dll
 *.so
 *.dylib
 *.a
 *.lib
+*.obj
+*.o
+*.pdb
+*.ilk
+*.exp
 
-# 第三方 SDK (体积大，且包含大量二进制文件，不建议提交到 git)
-livekit-sdk-*
+# ==================== 操作系统文件 ====================
+.DS_Store
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+
+# ==================== 第三方依赖 ====================
+# LiveKit SDK（由 cmake/FetchLiveKit.cmake 自动管理）
+extend/livekit-sdk-windows/
+extend/.cache/
+
+# 旧版 Debug SDK（手动管理）
+# extend/livekit-sdk-windows-x64-debug/
+
+# ==================== 测试相关 ====================
+# GoogleTest 自动下载目录
+build/_deps/
+
+# 测试输出
+Testing/
+test-results/
+*.xml

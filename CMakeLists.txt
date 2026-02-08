@@ -8,27 +8,21 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-# ==================== 1. LiveKit SDK 路径配置 ====================
+# ==================== 1. LiveKit SDK 自动下载与配置 ====================
+# 通过 cmake/FetchLiveKit.cmake 自动从 GitHub Releases 下载 SDK
+# 修改 LIVEKIT_VERSION 可切换版本号
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/FetchLiveKit.cmake)
 
-# [Release 配置] 新路径 - extend 目录下
-set(LIVEKIT_RELEASE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/extend/livekit-sdk-windows")
-set(LIVEKIT_RELEASE_LIB  "${LIVEKIT_RELEASE_ROOT}/lib")
-set(LIVEKIT_RELEASE_BIN  "${LIVEKIT_RELEASE_ROOT}/lib")  # DLL 也在 lib 目录
-
-# [Debug 配置] 新路径 - extend 目录下
+# [Debug 配置] - extend 目录下 (如果有 Debug 版 SDK)
 set(LIVEKIT_DEBUG_ROOT   "${CMAKE_CURRENT_SOURCE_DIR}/extend/livekit-sdk-windows-x64-debug")
 set(LIVEKIT_DEBUG_LIB    "${LIVEKIT_DEBUG_ROOT}/lib")
 set(LIVEKIT_DEBUG_BIN    "${LIVEKIT_DEBUG_ROOT}/lib")
 
-# 头文件路径 (使用 Release SDK 的 include)
-set(LIVEKIT_INCLUDE_DIR  "${LIVEKIT_RELEASE_ROOT}/include")
-
 # 查找Qt包
 find_package(Qt6 REQUIRED COMPONENTS Core Quick QuickControls2 Multimedia Network WebSockets Concurrent)
 
-# 源文件
-set(PROJECT_SOURCES
-    src/main.cpp
+# 源文件（不含 main.cpp，便于测试复用）
+set(LIB_SOURCES
     src/meetingcontroller.cpp
     src/meetingcontroller.h
     src/participantmodel.cpp
@@ -45,6 +39,12 @@ set(PROJECT_SOURCES
     src/remotevideorenderer.h
     src/remoteaudioplayer.cpp
     src/remoteaudioplayer.h
+)
+
+# 源文件（包含 main.cpp）
+set(PROJECT_SOURCES
+    src/main.cpp
+    ${LIB_SOURCES}
 )
 
 # QML资源文件
@@ -73,12 +73,12 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${LIVEKIT_INCLUDE_DIR}
 )
 
-# 核心修改：使用 optimized (Release) 和 debug (Debug) 关键字区分链接库
-# 新版 Release SDK 的 abseil/protobuf 已内嵌到 livekit.dll，无需单独链接
+# 使用 optimized (Release) 和 debug (Debug) 关键字区分链接库
+# Release SDK (通过 cmake/FetchLiveKit.cmake 自动下载) abseil/protobuf 已内嵌到 livekit.dll
 target_link_libraries(${PROJECT_NAME} PRIVATE
-    # --- Release 模式用 ---
-    optimized ${LIVEKIT_RELEASE_LIB}/livekit.lib
-    optimized ${LIVEKIT_RELEASE_LIB}/livekit_ffi.dll.lib
+    # --- Release 模式用 (自动下载的 SDK) ---
+    optimized ${LIVEKIT_LIB_DIR}/livekit.lib
+    optimized ${LIVEKIT_LIB_DIR}/livekit_ffi.dll.lib
     
     # --- Debug 模式用 ---
     debug ${LIVEKIT_DEBUG_LIB}/livekit.lib
@@ -92,14 +92,14 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 # 含义：如果是 Debug 模式，使用路径 A，否则使用路径 B
 
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-    # 1. 【新增】复制 livekit.dll (Release 版新增的动态库)
+    # 1. 复制 livekit.dll (Release SDK 的 bin 目录)
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${LIVEKIT_RELEASE_BIN}/livekit.dll"
+        "${LIVEKIT_BIN_DIR}/livekit.dll"
         $<TARGET_FILE_DIR:${PROJECT_NAME}>
     
-    # 2. 复制 livekit_ffi.dll
+    # 2. 复制 livekit_ffi.dll (根据构建配置选择 Release/Debug)
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "$<IF:$<CONFIG:Debug>,${LIVEKIT_DEBUG_BIN}/livekit_ffi.dll,${LIVEKIT_RELEASE_BIN}/livekit_ffi.dll>"
+        "$<IF:$<CONFIG:Debug>,${LIVEKIT_DEBUG_BIN}/livekit_ffi.dll,${LIVEKIT_BIN_DIR}/livekit_ffi.dll>"
         $<TARGET_FILE_DIR:${PROJECT_NAME}>
     
     # 3. 复制 abseil_dll.dll (仅 Debug 需要)
@@ -134,3 +134,51 @@ install(TARGETS ${PROJECT_NAME}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
+
+# ==================== 4. 测试配置（GoogleTest）====================
+option(BUILD_TESTS "Build unit tests and integration tests" OFF)
+
+if(BUILD_TESTS)
+    message(STATUS "======================================================")
+    message(STATUS "  Tests enabled (GoogleTest)")
+    message(STATUS "======================================================")
+
+    enable_testing()
+    find_package(Qt6 REQUIRED COMPONENTS Test)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/FetchGoogleTest.cmake)
+
+    # 创建静态库目标（供测试链接，避免重复编译）
+    qt_add_library(MeetingAppLib STATIC ${LIB_SOURCES})
+
+    target_include_directories(MeetingAppLib PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${LIVEKIT_INCLUDE_DIR}
+    )
+
+    target_link_libraries(MeetingAppLib PUBLIC
+        Qt6::Core
+        Qt6::Quick
+        Qt6::QuickControls2
+        Qt6::Multimedia
+        Qt6::Network
+        Qt6::WebSockets
+        Qt6::Concurrent
+    )
+
+    # 链接 LiveKit SDK
+    target_link_libraries(MeetingAppLib PUBLIC
+        optimized ${LIVEKIT_LIB_DIR}/livekit.lib
+        optimized ${LIVEKIT_LIB_DIR}/livekit_ffi.dll.lib
+        debug ${LIVEKIT_DEBUG_LIB}/livekit.lib
+        debug ${LIVEKIT_DEBUG_LIB}/livekit_ffi.dll.lib
+        debug ${LIVEKIT_DEBUG_LIB}/libprotobufd.lib
+        debug ${LIVEKIT_DEBUG_LIB}/abseil_dll.lib
+    )
+
+    if(WIN32)
+        target_link_libraries(MeetingAppLib PUBLIC d3d11 dxgi)
+    endif()
+
+    # 添加测试子目录
+    add_subdirectory(tests)
+endif()
