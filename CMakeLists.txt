@@ -39,6 +39,8 @@ set(LIB_SOURCES
     src/remotevideorenderer.h
     src/remoteaudioplayer.cpp
     src/remoteaudioplayer.h
+    src/aiassistant.cpp
+    src/aiassistant.h
 )
 
 # 源文件（包含 main.cpp）

@@ -11,6 +11,7 @@ Page {
     
     property bool showChat: false
     property bool showParticipants: false
+    property bool showAI: false
     
     background: Rectangle {
         color: "#0D0D1A"
@@ -45,7 +46,7 @@ Page {
         anchors.right: parent.right
         anchors.top: topBar.bottom
         anchors.bottom: controlBar.top
-        width: (showChat || showParticipants) ? 320 : 0
+        width: (showChat || showParticipants || showAI) ? 320 : 0
         color: "#1A1A2E"
         clip: true
         
@@ -70,7 +71,7 @@ Page {
                 spacing: 8
                 
                 Text {
-                    text: showChat ? "聊天" : "参会者"
+                    text: showChat ? "聊天" : (showAI ? "AI 助手" : "参会者")
                     font.pixelSize: 16
                     font.bold: true
                     color: "#FFFFFF"
@@ -99,6 +100,7 @@ Page {
                     onClicked: {
                         showChat = false
                         showParticipants = true
+                        showAI = false
                     }
                 }
                 
@@ -122,6 +124,32 @@ Page {
                     onClicked: {
                         showChat = true
                         showParticipants = false
+                        showAI = false
+                    }
+                }
+                
+                // AI 助手切换按钮
+                Button {
+                    implicitWidth: 32
+                    implicitHeight: 32
+                    flat: true
+                    visible: !showAI
+                    
+                    background: Rectangle {
+                        radius: 6
+                        color: parent.hovered ? "#3D3D5C" : "transparent"
+                    }
+                    
+                    Text {
+                        anchors.centerIn: parent
+                        text: "🤖"
+                        font.pixelSize: 16
+                    }
+                    
+                    onClicked: {
+                        showChat = false
+                        showParticipants = false
+                        showAI = true
                     }
                 }
                 
@@ -146,6 +174,7 @@ Page {
                     onClicked: {
                         showChat = false
                         showParticipants = false
+                        showAI = false
                     }
                 }
             }
@@ -168,6 +197,15 @@ Page {
             anchors.bottom: parent.bottom
             visible: showChat
         }
+        
+        // AI 助手面板
+        AIPanel {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: panelHeader.bottom
+            anchors.bottom: parent.bottom
+            visible: showAI
+        }
     }
     
     // 底部控制栏
@@ -189,6 +227,7 @@ Page {
             } else {
                 showParticipants = true
                 showChat = false
+                showAI = false
                 chatModel.markAllAsRead()
             }
         }
@@ -199,7 +238,18 @@ Page {
             } else {
                 showChat = true
                 showParticipants = false
+                showAI = false
                 chatModel.markAllAsRead()
+            }
+        }
+        
+        onToggleAI: {
+            if (showAI) {
+                showAI = false
+            } else {
+                showAI = true
+                showChat = false
+                showParticipants = false
             }
         }
         

@@ -10,6 +10,7 @@
         <file>qml/components/VideoItem.qml</file>
         <file>qml/components/ParticipantPanel.qml</file>
         <file>qml/components/ChatPanel.qml</file>
+        <file>qml/components/AIPanel.qml</file>
         <file>qml/components/MeetingButton.qml</file>
         <file>qml/components/TopBar.qml</file>
         <file>qml/dialogs/JoinMeetingDialog.qml</file>

@@ -43,7 +43,8 @@ class MediaCapture;
  * @brief 视频帧接收器
  * 用于接收摄像头帧并转发给 LiveKit
  */
-class VideoFrameHandler : public QObject {
+class VideoFrameHandler : public QObject
+{
   Q_OBJECT
 public:
   explicit VideoFrameHandler(QObject *parent = nullptr);
@@ -68,7 +69,8 @@ private:
  * @brief 音频帧接收器
  * 用于接收麦克风数据并转发给 LiveKit
  */
-class AudioFrameHandler : public QIODevice {
+class AudioFrameHandler : public QIODevice
+{
   Q_OBJECT
 public:
   explicit AudioFrameHandler(int sampleRate, int channels,
@@ -86,6 +88,16 @@ public:
   qint64 readData(char *data, qint64 maxlen) override;
   qint64 writeData(const char *data, qint64 len) override;
 
+signals:
+  /**
+   * @brief 麦克风原始 PCM 数据信号（供 AI 语音转录使用）
+   * @param pcmData 原始 PCM 字节数据
+   * @param sampleRate 采样率
+   * @param channels 声道数
+   */
+  void rawAudioCaptured(const QByteArray &pcmData, int sampleRate,
+                        int channels);
+
 private:
   std::shared_ptr<livekit::AudioSource> m_audioSource;
   bool m_enabled = false;
@@ -99,7 +111,8 @@ private:
  *
  * 管理摄像头和麦克风的采集，并提供给 LiveKit SDK 使用
  */
-class MediaCapture : public QObject {
+class MediaCapture : public QObject
+{
   Q_OBJECT
 
   // QML 可访问的属性
@@ -152,7 +165,8 @@ public:
   Q_INVOKABLE void bindVideoSink(QVideoSink *sink) { setVideoSink(sink); }
 
   // 获取 QMediaCaptureSession（供 QML VideoOutput 使用）
-  Q_INVOKABLE QMediaCaptureSession *captureSession() const {
+  Q_INVOKABLE QMediaCaptureSession *captureSession() const
+  {
     return m_captureSession.get();
   }
 
@@ -161,10 +175,12 @@ public:
   std::shared_ptr<livekit::LocalAudioTrack> getAudioTrack();
 
   // 获取 LiveKit Source（用于直接访问）
-  std::shared_ptr<livekit::VideoSource> getVideoSource() {
+  std::shared_ptr<livekit::VideoSource> getVideoSource()
+  {
     return m_lkVideoSource;
   }
-  std::shared_ptr<livekit::AudioSource> getAudioSource() {
+  std::shared_ptr<livekit::AudioSource> getAudioSource()
+  {
     return m_lkAudioSource;
   }
 
@@ -210,6 +226,10 @@ signals:
   void microphoneError(const QString &error);
   void videoFrameCaptured();
   void audioFrameCaptured();
+
+  // 麦克风原始 PCM 数据信号（转发自 AudioFrameHandler，供 AI 转录使用）
+  void rawAudioCaptured(const QByteArray &pcmData, int sampleRate,
+                        int channels);
 
 private slots:
   void onCameraActiveChanged(bool active);

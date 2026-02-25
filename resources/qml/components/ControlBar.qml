@@ -14,6 +14,7 @@ Rectangle {
     signal toggleHandRaise()
     signal toggleParticipants()
     signal toggleChat()
+    signal toggleAI()
     signal inviteClicked()
     signal settingsClicked()
     signal leaveClicked()
@@ -109,6 +110,13 @@ Rectangle {
                 labelText: "聊天"
                 badgeCount: chatModel.unreadCount
                 onClicked: toggleChat()
+            }
+            
+            // AI 助手按钮
+            MeetingButton {
+                iconText: "🤖"
+                labelText: "AI 助手"
+                onClicked: toggleAI()
             }
             
             // 邀请按钮

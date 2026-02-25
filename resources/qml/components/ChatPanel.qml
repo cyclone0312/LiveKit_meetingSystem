@@ -206,7 +206,11 @@ Item {
                         
                         function sendMessage() {
                             if (text.trim().length > 0) {
-                                chatModel.sendMessage(text.trim(), meetingController.userName)
+                                var msg = text.trim()
+                                // 1. 本地显示消息
+                                chatModel.sendMessage(msg, meetingController.userName)
+                                // 2. 通过 LiveKit 数据通道广播给其他参会者
+                                liveKitManager.sendChatMessage(msg)
                                 text = ""
                             }
                         }
