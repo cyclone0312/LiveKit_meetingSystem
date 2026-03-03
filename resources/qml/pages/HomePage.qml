@@ -23,6 +23,7 @@ Page {
                 // 格式化时间
                 var timeStr = formatDateTime(meeting.startTime)
                 recentMeetingsModel.append({
+                    "historyId": meeting.id,
                     "title": meeting.roomName,
                     "meetingId": meeting.roomName,
                     "time": timeStr,
@@ -66,7 +67,165 @@ Page {
         if (isNaN(date.getTime())) return dateTimeStr
         return Qt.formatDateTime(date, "yyyy-MM-dd hh:mm")
     }
-    
+
+    // 获取服务器 URL
+    function getServerUrl() {
+        if (meetingController && meetingController.liveKitManager)
+            return meetingController.liveKitManager.tokenServerUrl
+        return "http://8.162.3.195:3000"
+    }
+
+    // 检查房间状态并决定是否加入
+    function checkRoomAndJoin(meetingId) {
+        var xhr = new XMLHttpRequest()
+        xhr.open("GET", getServerUrl() + "/api/room/status?roomName=" + encodeURIComponent(meetingId))
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === XMLHttpRequest.DONE) {
+                if (xhr.status === 200) {
+                    try {
+                        var response = JSON.parse(xhr.responseText)
+                        if (response.active) {
+                            joinMeeting(meetingId)
+                        } else {
+                            roomClosedDialog.open()
+                        }
+                    } catch (e) {
+                        console.log("[HomePage] 解析房间状态失败:", e)
+                        joinMeeting(meetingId) // 解析失败时允许尝试加入
+                    }
+                } else {
+                    console.log("[HomePage] 查询房间状态失败:", xhr.status)
+                    joinMeeting(meetingId) // 网络失败时允许尝试加入
+                }
+            }
+        }
+        xhr.send()
+    }
+
+    // 删除会议历史记录
+    function deleteHistoryItem(historyId, index) {
+        var username = meetingController ? meetingController.userName : ""
+        if (!username) return
+
+        var xhr = new XMLHttpRequest()
+        xhr.open("POST", getServerUrl() + "/api/history/delete")
+        xhr.setRequestHeader("Content-Type", "application/json")
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === XMLHttpRequest.DONE) {
+                if (xhr.status === 200) {
+                    try {
+                        var response = JSON.parse(xhr.responseText)
+                        if (response.success) {
+                            recentMeetingsModel.remove(index)
+                            console.log("[HomePage] 已删除会议记录 id=" + historyId)
+                        }
+                    } catch (e) {
+                        console.log("[HomePage] 删除解析失败:", e)
+                    }
+                } else {
+                    console.log("[HomePage] 删除失败:", xhr.status)
+                }
+            }
+        }
+        xhr.send(JSON.stringify({ id: historyId, username: username }))
+    }
+
+    // 会议已关闭弹窗
+    Dialog {
+        id: roomClosedDialog
+        anchors.centerIn: parent
+        title: "无法加入"
+        modal: true
+        standardButtons: Dialog.Ok
+
+        background: Rectangle {
+            radius: 12
+            color: "#252542"
+            border.color: "#3D3D5C"
+            border.width: 1
+        }
+
+        header: Rectangle {
+            color: "transparent"
+            height: 48
+            Text {
+                anchors.centerIn: parent
+                text: "无法加入会议"
+                font.pixelSize: 16
+                font.bold: true
+                color: "#FFFFFF"
+            }
+        }
+
+        contentItem: Text {
+            text: "该会议已结束或已关闭，\n无法重新加入。"
+            font.pixelSize: 14
+            color: "#C0C0D0"
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.Wrap
+            padding: 20
+        }
+
+        footer: DialogButtonBox {
+            alignment: Qt.AlignHCenter
+            background: Rectangle { color: "transparent" }
+            delegate: Button {
+                text: "知道了"
+                font.pixelSize: 14
+                background: Rectangle {
+                    radius: 6
+                    color: parent.pressed ? "#1873CC" : "#1E90FF"
+                }
+                contentItem: Text {
+                    text: parent.text
+                    font: parent.font
+                    color: "white"
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+        }
+    }
+
+    // 右键菜单
+    Menu {
+        id: contextMenu
+        property int targetIndex: -1
+        property int targetHistoryId: -1
+
+        background: Rectangle {
+            radius: 8
+            color: "#2D2D4A"
+            border.color: "#3D3D5C"
+            border.width: 1
+            implicitWidth: 120
+        }
+
+        MenuItem {
+            text: "🗑 删除记录"
+            font.pixelSize: 14
+
+            background: Rectangle {
+                radius: 4
+                color: parent.highlighted ? "#3D3D5C" : "transparent"
+            }
+
+            contentItem: Text {
+                text: parent.text
+                font: parent.font
+                color: parent.highlighted ? "#FF6B6B" : "#C0C0D0"
+                verticalAlignment: Text.AlignVCenter
+                leftPadding: 12
+            }
+
+            onTriggered: {
+                if (contextMenu.targetIndex >= 0 && contextMenu.targetHistoryId > 0) {
+                    deleteHistoryItem(contextMenu.targetHistoryId, contextMenu.targetIndex)
+                }
+            }
+        }
+    }
+
     background: Rectangle {
         color: "#1A1A2E"
     }
@@ -622,7 +781,7 @@ Page {
                                             verticalAlignment: Text.AlignVCenter
                                         }
                                         
-                                        onClicked: joinMeeting(model.meetingId)
+                                        onClicked: checkRoomAndJoin(model.meetingId)
                                     }
                                 }
                                 
@@ -630,8 +789,14 @@ Page {
                                     id: itemArea
                                     anchors.fill: parent
                                     hoverEnabled: true
-                                    propagateComposedEvents: true
-                                    onClicked: mouse.accepted = false
+                                    acceptedButtons: Qt.RightButton
+                                    onClicked: function(mouse) {
+                                        if (mouse.button === Qt.RightButton) {
+                                            contextMenu.targetIndex = index
+                                            contextMenu.targetHistoryId = model.historyId
+                                            contextMenu.popup()
+                                        }
+                                    }
                                 }
                             }
                         }

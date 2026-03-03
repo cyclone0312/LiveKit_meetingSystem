@@ -1,0 +1,193 @@
+qt.multimedia.ffmpeg: Using Qt multimedia with FFmpeg version 7.1 LGPL version 2.1 or later
+[MediaCapture] 初始化中...
+[MediaCapture] 发现 2 个摄像头:
+  - "Integrated Camera"
+  - "Integrated IR Camera"
+[MediaCapture] 发现 1 个麦克风:
+  - "麦克风 (Realtek(R) Audio)"
+[MediaCapture] 创建 LiveKit 源...
+[VideoFrameHandler] VideoSource 已设置
+[AudioFrameHandler] AudioSource 已设置
+[MediaCapture] LiveKit 源和轨道创建完成
+[MediaCapture] 初始化完成
+[ScreenCapture] 初始化中...
+[ScreenCapture] 发现 1 个屏幕:
+  - "显示器 1 (主屏幕)" 2560 x 1600
+[ScreenCapture] 初始化完成
+[LiveKitManager] SDK 初始化完成
+[LiveKitManager] 初始化完成
+[LiveKitManager] LiveKit Server: "ws://8.162.3.195:7880"
+[LiveKitManager] Token Server: "http://8.162.3.195:3000"
+[MeetingController] LiveKit 信号连接已设置
+[MeetingController] 初始化完成，LiveKit 管理器已创建
+[AIAssistant] 初始化完成 (实时 WebSocket ASR 模式)
+[LiveKitManager] 正在登录用户: "123"
+[LiveKitManager] 登录成功: "123"
+[LiveKitManager] 用户密码已设置
+[MeetingController] 凭据已保存
+[LiveKitManager] 正在获取会议历史: "123"
+[LiveKitManager] 成功获取会议历史, 共 10 条记录
+qml: [HomePage] 加载了 10 条会议记录
+[MeetingController] 创建会议: ""
+[LiveKitManager] 准备加入房间: "305437736" 用户: "123"
+[LiveKitManager] 正在请求 Token...
+[LiveKitManager] 成功获取 Token
+[LiveKitManager] 正在连接 LiveKit Server...
+[LiveKitManager] URL: "ws://8.162.3.195:7880"
+[LiveKitManager] 后台线程开始连接...
+cs.state() is 1 connection_state_ is 1
+[LiveKitManager] 连接成功!
+[LiveKitManager] Delegate 已重新启用
+qml: [ConnectionLoadingDialog] 连接成功，关闭等待对话框
+qml: [main.qml] LiveKit 连接成功，添加本地用户并进入会议室
+qml: [VideoItem] 远程 VideoOutput 初始化, participantId= self participantName= 123
+qml: [VideoItem] 屏幕共享 VideoOutput 初始化，绑定 VideoSink
+[ScreenCapture] 本地预览 VideoSink 已设置: 有效
+qml: [VideoItem] VideoOutput 初始化, isLocalUser= true participantName= 123
+qml: [VideoItem] 尝试绑定 VideoSink
+[MediaCapture] setVideoSink 被调用, sink= QQuickVideoSink(0x1906ada63e0) 当前 m_externalVideoSink= QObject(0x0) cameraActive= false
+[MediaCapture] 外部 VideoSink 已设置: 有效
+[MeetingController] LiveKit 连接成功，进入会议
+[main] AI 助手已同步: serverUrl= "http://8.162.3.195:3000" room= "305437736" user= "123"
+[LiveKitManager] 已有远程参会者数量: 0
+qml: [main.qml] 麦克风状态变化: true
+[LiveKitManager] publishMicrophone 被调用, isConnected= true microphonePublished= false
+[LiveKitManager] 首次发布，启动本地麦克风...
+[MediaCapture] 启动麦克风...
+[MediaCapture] 设备不支持请求的音频格式，使用默认格式
+[MediaCapture] 音频格式与配置不同，重新创建 AudioSource
+[MediaCapture] 实际格式: 采样率= 48000 声道= 2
+[AudioFrameHandler] AudioSource 已设置
+[MediaCapture] AudioSource 和 AudioTrack 已使用实际格式重新创建
+[AudioFrameHandler] 已 启用
+[MediaCapture] 麦克风已启动 采样率: 48000 声道: 2
+[LiveKitManager] doPublishMicrophoneTrack 被调用
+[LiveKitManager] 正在发布音频轨道...
+[LiveKitManager] 麦克风轨道已发布
+[AIAssistant] 正在直连 DashScope ASR: wss://dashscope.aliyuncs.com/api-ws/v1/inference
+[AIAssistant] model= paraformer-realtime-v2 roomName= "305437736" userName= "123"
+[AIAssistant] DashScope ASR WebSocket 已连接，发送 run-task...
+[AIAssistant] 发送 run-task: "{\"header\":{\"action\":\"run-task\",\"streaming\":\"duplex\",\"task_id\":\"15364dfe-cd5f-453f-9d91-5a91c4758a72\"},\"payload\":{\"function\":\"recognition\",\"input\":{},\"model\":\"paraformer-realtime-v2\",\"parameters\":{\"format\":\"pcm\",\"sample_rate\":16000},\"task\":\"asr\",\"task_group\":\"audio\"}}"
+[AIAssistant] DashScope 事件: "task-started" 原始: "{\"header\":{\"task_id\":\"15364dfe-cd5f-453f-9d91-5a91c4758a72\",\"event\":\"task-started\",\"attributes\":{}},\"payload\":{}}"
+[AIAssistant] ASR 任务已启动，开始实时流式转录 task_id= "15364dfe-cd5f-453f-9d91-5a91c4758a72"
+[AIAssistant] 音频发送: 第 10 次, 本次 6464 字节
+[AIAssistant] DashScope 事件: "result-generated" 原始: "{\"header\":{\"task_id\":\"15364dfe-cd5f-453f-9d91-5a91c4758a72\",\"event\":\"result-generated\",\"attributes\":{}},\"payload\":{\"output\":{\"sentence\":{\"sentence_id\":1,\"begin_time\":1480,\"end_time\":null,\"text\":\"\",\"channel_id\":0,\"speaker_id\":null,\"sentence_end\":false,\"sentence_begin\":true,\"words\":[]}}}}"
+[AIAssistant] DashScope 事件: "result-generated" 原始: "{\"header\":{\"task_id\":\"15364dfe-cd5f-453f-9d91-5a91c4758a72\",\"event\":\"result-generated\",\"attributes\":{}},\"payload\":{\"output\":{\"sentence\":{\"sentence_id\":1,\"begin_time\":1480,\"end_time\":null,\"text\":\"呃，对\",\"channel_id\":0,\"speaker_id\":null,\"sentence_end\":false,\"words\":[{\"begin_time\":1480,\"end_time\":1740,\"t"
+[AIAssistant] 转录中间结果: "呃，对"
+[AIAssistant] 音频发送: 第 20 次, 本次 6464 字节
+[AIAssistant] DashScope 事件: "result-generated" 原始: "{\"header\":{\"task_id\":\"15364dfe-cd5f-453f-9d91-5a91c4758a72\",\"event\":\"result-generated\",\"attributes\":{}},\"payload\":{\"output\":{\"sentence\":{\"sentence_id\":1,\"begin_time\":1480,\"end_time\":3480,\"text\":\"\",\"channel_id\":0,\"speaker_id\":null,\"sentence_end\":true,\"words\":[],\"stash\":{\"sentence_id\":2,\"text\":\"\",\"beg"
+[AIAssistant] 音频发送: 第 30 次, 本次 6464 字节
+[AIAssistant] 音频发送: 第 40 次, 本次 6464 字节
+[AIAssistant] 音频发送: 第 50 次, 本次 6528 字节
+[AIAssistant] 音频发送: 第 60 次, 本次 6400 字节
+[AIAssistant] 音频发送: 第 70 次, 本次 6400 字节
+[AIAssistant] 音频发送: 第 80 次, 本次 6400 字节
+[AIAssistant] 音频发送: 第 90 次, 本次 6400 字节
+[AIAssistant] 音频发送: 第 100 次, 本次 6464 字节
+[AIAssistant] 音频发送: 第 110 次, 本次 6464 字节
+[AIAssistant] 音频发送: 第 120 次, 本次 6464 字节
+[AIAssistant] 音频发送: 第 130 次, 本次 6464 字节
+[AIAssistant] 音频发送: 第 140 次, 本次 6464 字节
+[AIAssistant] 音频发送: 第 150 次, 本次 6464 字节
+[AIAssistant] 音频发送: 第 160 次, 本次 6464 字节
+[AIAssistant] 音频发送: 第 170 次, 本次 6464 字节
+[AIAssistant] 音频发送: 第 180 次, 本次 6464 字节
+[AIAssistant] 音频发送: 第 190 次, 本次 6528 字节
+[AIAssistant] 音频发送: 第 200 次, 本次 6400 字节
+[AIAssistant] 错误: "Error transferring http://8.162.3.195:3000/api/ai/meeting-minutes - server replied: Bad Request"
+[AIAssistant] 音频发送: 第 210 次, 本次 6464 字节
+[AIAssistant] 音频发送: 第 220 次, 本次 6464 字节
+[AIAssistant] 音频发送: 第 230 次, 本次 6464 字节
+[AIAssistant] 停止实时语音转录
+[AIAssistant] 刷新剩余缓冲: 640 字节
+[AIAssistant] 发送 finish-task
+[AIAssistant] DashScope 事件: "task-failed" 原始: "{\"header\":{\"task_id\":\"15364dfe-cd5f-453f-9d91-5a91c4758a72\",\"event\":\"task-failed\",\"error_code\":\"InvalidParameter\",\"error_message\":\"Missing required parameter 'payload'! Please follow the protocol!\",\"attributes\":{}},\"payload\":{}}"
+[AIAssistant] ASR 任务失败: "InvalidParameter" "Missing required parameter 'payload'! Please follow the protocol!"
+[AIAssistant] 错误: "语音转录失败: Missing required parameter 'payload'! Please follow the protocol!"
+[AIAssistant] ASR WebSocket 已断开
+[AIAssistant] 正在直连 DashScope ASR: wss://dashscope.aliyuncs.com/api-ws/v1/inference
+[AIAssistant] model= paraformer-realtime-v2 roomName= "305437736" userName= "123"
+[AIAssistant] DashScope ASR WebSocket 已连接，发送 run-task...
+[AIAssistant] 发送 run-task: "{\"header\":{\"action\":\"run-task\",\"streaming\":\"duplex\",\"task_id\":\"a234ca23-d0ac-4486-a512-61762330b597\"},\"payload\":{\"function\":\"recognition\",\"input\":{},\"model\":\"paraformer-realtime-v2\",\"parameters\":{\"format\":\"pcm\",\"sample_rate\":16000},\"task\":\"asr\",\"task_group\":\"audio\"}}"
+[AIAssistant] DashScope 事件: "task-started" 原始: "{\"header\":{\"task_id\":\"a234ca23-d0ac-4486-a512-61762330b597\",\"event\":\"task-started\",\"attributes\":{}},\"payload\":{}}"
+[AIAssistant] ASR 任务已启动，开始实时流式转录 task_id= "a234ca23-d0ac-4486-a512-61762330b597"
+[AIAssistant] 音频发送: 第 10 次, 本次 6400 字节
+[AIAssistant] 超时强制关闭 ASR WebSocket
+[AIAssistant] WebSocket 未连接，丢弃音频数据
+[AIAssistant] WebSocket 未连接，丢弃音频数据
+[AIAssistant] ASR WebSocket 已断开
+qrc:/qml/components/AIPanel.qml:622: TypeError: Cannot read property 'isBusy' of null
+qrc:/qml/components/AIPanel.qml:624: TypeError: Cannot read property 'isBusy' of null
+qrc:/qml/components/AIPanel.qml:544: TypeError: Cannot read property 'isBusy' of null
+qrc:/qml/components/AIPanel.qml:409: TypeError: Cannot read property 'liveTranscript' of null
+qrc:/qml/components/AIPanel.qml:393: TypeError: Cannot read property 'isTranscribing' of null
+qrc:/qml/components/AIPanel.qml:348: TypeError: Cannot read property 'transcriptCount' of null
+qrc:/qml/components/AIPanel.qml:340: TypeError: Cannot read property 'isTranscribing' of null
+qrc:/qml/components/AIPanel.qml:342: TypeError: Cannot read property 'isTranscribing' of null
+qrc:/qml/components/AIPanel.qml:329: TypeError: Cannot read property 'isTranscribing' of null
+qrc:/qml/components/AIPanel.qml:332: TypeError: Cannot read property 'isTranscribing' of null
+qrc:/qml/components/AIPanel.qml:258: TypeError: Cannot read property 'isBusy' of null
+qrc:/qml/components/AIPanel.qml:204: TypeError: Cannot read property 'isBusy' of null
+qrc:/qml/components/AIPanel.qml:221: TypeError: Cannot read property 'isBusy' of null
+qrc:/qml/components/AIPanel.qml:206: TypeError: Cannot read property 'isBusy' of null
+qrc:/qml/components/AIPanel.qml:554: TypeError: Cannot read property 'isBusy' of null
+qrc:/qml/components/AIPanel.qml:360: TypeError: Cannot read property 'isTranscribing' of null
+qrc:/qml/components/AIPanel.qml:366: TypeError: Cannot read property 'isTranscribing' of null
+qrc:/qml/components/ControlBar.qml:111: TypeError: Cannot read property 'unreadCount' of null
+qrc:/qml/components/ChatPanel.qml:135: TypeError: Cannot read property 'count' of null
+qrc:/qml/components/ControlBar.qml:103: TypeError: Cannot read property 'count' of null
+qrc:/qml/components/ParticipantPanel.qml:58: TypeError: Cannot read property 'count' of null
+qrc:/qml/components/VideoGrid.qml:89: TypeError: Cannot read property 'count' of null
+qrc:/qml/components/VideoGrid.qml:36: TypeError: Cannot read property 'count' of null
+qrc:/qml/components/VideoGrid.qml:44: TypeError: Cannot read property 'count' of null
+qrc:/qml/components/ControlBar.qml:77: TypeError: Cannot read property 'isHandRaised' of null
+qrc:/qml/components/ControlBar.qml:78: TypeError: Cannot read property 'isHandRaised' of null
+qrc:/qml/components/ControlBar.qml:60: TypeError: Cannot read property 'isRecording' of null
+qrc:/qml/components/ControlBar.qml:61: TypeError: Cannot read property 'isRecording' of null
+qrc:/qml/components/ControlBar.qml:62: TypeError: Cannot read property 'isRecording' of null
+qrc:/qml/components/ControlBar.qml:53: TypeError: Cannot read property 'isScreenSharing' of null
+qrc:/qml/components/ControlBar.qml:54: TypeError: Cannot read property 'isScreenSharing' of null
+qrc:/qml/components/ControlBar.qml:43: TypeError: Cannot read property 'isCameraOn' of null
+qrc:/qml/components/ControlBar.qml:44: TypeError: Cannot read property 'isCameraOn' of null
+qrc:/qml/components/ControlBar.qml:45: TypeError: Cannot read property 'isCameraOn' of null
+qrc:/qml/components/ControlBar.qml:46: TypeError: Cannot read property 'isCameraOn' of null
+qrc:/qml/components/ControlBar.qml:34: TypeError: Cannot read property 'isMicOn' of null
+qrc:/qml/components/ControlBar.qml:35: TypeError: Cannot read property 'isMicOn' of null
+qrc:/qml/components/ControlBar.qml:36: TypeError: Cannot read property 'isMicOn' of null
+qrc:/qml/components/ControlBar.qml:37: TypeError: Cannot read property 'isMicOn' of null
+qrc:/qml/components/TopBar.qml:97: TypeError: Cannot read property 'meetingDuration' of null
+qrc:/qml/components/TopBar.qml:82: TypeError: Cannot read property 'isRecording' of null
+qrc:/qml/components/TopBar.qml:89: TypeError: Cannot read property 'isRecording' of null
+qrc:/qml/components/TopBar.qml:51: TypeError: Cannot read property 'meetingId' of null
+qrc:/qml/components/TopBar.qml:36: TypeError: Cannot read property 'meetingTitle' of null
+[LiveKitManager] 析构开始...
+[LiveKitManager] 离开房间: "305437736"
+[MediaCapture] 停止麦克风...
+[AudioFrameHandler] 已 禁用
+[MediaCapture] 麦克风已停止
+[LiveKitManager] 停止所有远程视频渲染器: 0
+[LiveKitManager] 停止所有远程音频播放器: 0
+[LiveKitManager] Delegate 已禁用
+[LiveKitManager] 等待 SDK 事件处理完成...
+[LiveKitManager] 销毁旧 Room...
+[LiveKitManager] 等待 SDK 完全清理 (500ms)...
+[LiveKitManager] 创建新 Room...
+[LiveKitManager] 重置 LiveKit 源和轨道...
+[MediaCapture] 重置所有 LiveKit 源和轨道...
+[AudioFrameHandler] 已 禁用
+[VideoFrameHandler] 已 禁用
+[VideoFrameHandler] VideoSource 已设置
+[AudioFrameHandler] AudioSource 已设置
+[MediaCapture] LiveKit 源和轨道重置完成
+[ScreenCapture] 重置 LiveKit 源和轨道...
+[ScreenCapture] LiveKit 源和轨道重置完成
+qml: [main.qml] LiveKit 断开连接，清空参会者列表
+[LiveKitManager] Delegate 已禁用
+[LiveKitManager] Delegate 已断开
+[LiveKitManager] Room 已销毁
+[LiveKitManager] Delegate 已销毁
+[ScreenCapture] 已销毁
+[LiveKitManager] ScreenCapture 已销毁
+[MediaCapture] 已销毁
+[LiveKitManager] MediaCapture 已销毁
+[LiveKitManager] 析构完成

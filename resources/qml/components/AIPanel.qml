@@ -312,7 +312,7 @@ Item {
                 // 转录控制栏
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 48
+                    Layout.preferredHeight: 52
                     color: "#252542"
 
                     RowLayout {
@@ -321,25 +321,38 @@ Item {
                         anchors.rightMargin: 12
                         spacing: 8
 
-                        // 转录状态指示
+                        // 录音/转录状态指示
                         Rectangle {
                             width: 8
                             height: 8
                             radius: 4
-                            color: aiAssistant.isTranscribing ? "#4CAF50" : "#757575"
+                            color: aiAssistant.isRecordingAudio ? "#F44336" :
+                                   aiAssistant.isTranscribing ? "#FF9800" : "#757575"
 
                             SequentialAnimation on opacity {
-                                running: aiAssistant.isTranscribing
+                                running: aiAssistant.isRecordingAudio || aiAssistant.isTranscribing
                                 loops: Animation.Infinite
                                 NumberAnimation { to: 0.3; duration: 600 }
                                 NumberAnimation { to: 1.0; duration: 600 }
                             }
                         }
 
-                        Text {
-                            text: aiAssistant.isTranscribing ? "转录中..." : "转录已停止"
-                            font.pixelSize: 13
-                            color: aiAssistant.isTranscribing ? "#4CAF50" : "#808090"
+                        Column {
+                            spacing: 2
+                            Text {
+                                text: aiAssistant.isRecordingAudio ? "● 录音中" :
+                                      aiAssistant.isTranscribing ? "⏳ 识别中..." : "就绪"
+                                font.pixelSize: 13
+                                color: aiAssistant.isRecordingAudio ? "#F44336" :
+                                       aiAssistant.isTranscribing ? "#FF9800" : "#808090"
+                            }
+                            Text {
+                                visible: aiAssistant.isRecordingAudio
+                                text: aiAssistant.recordingDuration
+                                font.pixelSize: 11
+                                color: "#B0B0C0"
+                                font.family: "Consolas"
+                            }
                         }
 
                         Item { Layout.fillWidth: true }
@@ -350,20 +363,20 @@ Item {
                             color: "#808090"
                         }
 
-                        // 开始/停止按钮
+                        // 开始录音 按钮
                         Button {
-                            implicitWidth: 80
+                            implicitWidth: 90
                             implicitHeight: 32
+                            visible: !aiAssistant.isRecordingAudio && !aiAssistant.isTranscribing
+                            enabled: !aiAssistant.isTranscribing
 
                             background: Rectangle {
                                 radius: 6
-                                color: aiAssistant.isTranscribing ?
-                                    (parent.hovered ? "#EF5350" : "#F44336") :
-                                    (parent.hovered ? "#66BB6A" : "#4CAF50")
+                                color: parent.hovered ? "#66BB6A" : "#4CAF50"
                             }
 
                             contentItem: Text {
-                                text: aiAssistant.isTranscribing ? "停止" : "开始转录"
+                                text: "🎙 开始录音"
                                 font.pixelSize: 12
                                 color: "white"
                                 horizontalAlignment: Text.AlignHCenter
@@ -371,13 +384,76 @@ Item {
                             }
 
                             onClicked: {
-                                if (aiAssistant.isTranscribing) {
-                                    aiAssistant.stopTranscription();
-                                } else {
-                                    aiAssistant.startTranscription();
+                                // 自动开启麦克风
+                                if (!meetingController.isMicOn) {
+                                    meetingController.toggleMic();
                                 }
+                                aiAssistant.startRecording();
                             }
                         }
+
+                        // 停止并转录 按钮
+                        Button {
+                            implicitWidth: 100
+                            implicitHeight: 32
+                            visible: aiAssistant.isRecordingAudio
+
+                            background: Rectangle {
+                                radius: 6
+                                color: parent.hovered ? "#EF5350" : "#F44336"
+                            }
+
+                            contentItem: Text {
+                                text: "⏹ 停止并转录"
+                                font.pixelSize: 12
+                                color: "white"
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
+
+                            onClicked: {
+                                aiAssistant.stopRecordingAndTranscribe();
+                            }
+                        }
+                    }
+                }
+
+                // 转录进度提示（等待服务端返回时显示）
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: aiAssistant.isTranscribing ? 40 : 0
+                    color: "#1E2A2E"
+                    visible: aiAssistant.isTranscribing
+                    clip: true
+
+                    Behavior on Layout.preferredHeight {
+                        NumberAnimation { duration: 200 }
+                    }
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 12
+                        anchors.rightMargin: 12
+                        spacing: 8
+
+                        BusyIndicator {
+                            Layout.preferredWidth: 20
+                            Layout.preferredHeight: 20
+                            running: aiAssistant.isTranscribing
+                        }
+
+                        Text {
+                            text: "正在将录音转为文字，这可能需要 10~60 秒..."
+                            font.pixelSize: 12
+                            color: "#FF9800"
+                        }
+                    }
+
+                    SequentialAnimation on opacity {
+                        running: parent.visible
+                        loops: Animation.Infinite
+                        NumberAnimation { to: 0.6; duration: 1200 }
+                        NumberAnimation { to: 1.0; duration: 1200 }
                     }
                 }
 
@@ -462,7 +538,7 @@ Item {
                             }
                             Text {
                                 anchors.horizontalCenter: parent.horizontalCenter
-                                text: "点击\"开始转录\"自动记录发言"
+                                text: "点击\"开始录音\"录制后自动转为文字"
                                 font.pixelSize: 12
                                 color: "#606070"
                             }
@@ -639,6 +715,19 @@ Item {
                 "sender": "小会",
                 "content": summary,
                 "isAI": true
+            });
+        }
+
+        function onTranscriptionCompleted(fullText) {
+            console.log("[AIPanel] 转录完成: " + fullText.substring(0, 100));
+        }
+
+        function onTranscriptionFailed(error) {
+            // 在转录面板显示错误提示
+            transcriptModel.append({
+                "speaker": "系统",
+                "time": Qt.formatTime(new Date(), "HH:mm:ss"),
+                "text": "❌ 转录失败: " + error
             });
         }
     }

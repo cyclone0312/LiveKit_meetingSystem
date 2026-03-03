@@ -571,6 +571,7 @@ void LiveKitManager::fetchMeetingHistory(const QString &username)
     for (const QJsonValue &item : historyArray) {
       QJsonObject obj = item.toObject();
       QVariantMap meeting;
+      meeting["id"] = obj["id"].toInt();
       meeting["roomName"] = obj["room_name"].toString();
       meeting["startTime"] = obj["start_time"].toString();
       meeting["duration"] = obj["duration_seconds"].toInt();

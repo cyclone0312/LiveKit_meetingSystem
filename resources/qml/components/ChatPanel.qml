@@ -4,6 +4,17 @@ import QtQuick.Layouts 1.15
 
 Item {
     id: chatPanel
+
+    // 监听 AI 回复，显示在聊天列表中
+    Connections {
+        target: aiAssistant
+        function onAiReplyReceived(reply) {
+            chatModel.addMessage("ai-assistant", "🤖 小会", reply, false)
+        }
+        function onAiError(error) {
+            chatModel.addMessage("ai-assistant", "🤖 小会", "⚠ " + error, false)
+        }
+    }
     
     ColumnLayout {
         anchors.fill: parent
@@ -193,7 +204,7 @@ Item {
                         anchors.fill: parent
                         anchors.leftMargin: 12
                         anchors.rightMargin: 12
-                        placeholderText: "输入消息..."
+                        placeholderText: "输入消息... @小会 可唤起AI"
                         font.pixelSize: 13
                         color: "#FFFFFF"
                         
@@ -211,6 +222,16 @@ Item {
                                 chatModel.sendMessage(msg, meetingController.userName)
                                 // 2. 通过 LiveKit 数据通道广播给其他参会者
                                 liveKitManager.sendChatMessage(msg)
+                                
+                                // 3. 检测 @小会，触发 AI 回复
+                                if (msg.indexOf("@小会") !== -1) {
+                                    // 去掉 @小会 标记，提取实际问题
+                                    var aiQuery = msg.replace(/@小会/g, "").trim()
+                                    if (aiQuery.length > 0) {
+                                        aiAssistant.sendMessage(aiQuery)
+                                    }
+                                }
+                                
                                 text = ""
                             }
                         }
