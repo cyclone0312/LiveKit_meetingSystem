@@ -2,6 +2,7 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Controls.Material 2.15
 import QtQuick.Layouts 1.15
+import QtMultimedia
 
 Page {
     id: homePage
@@ -347,6 +348,25 @@ Page {
         }
     }
     
+    // 当前页面: "home" 或 "recordings"
+    property string currentPage: "home"
+
+    // 会议纪要结果弹窗内容
+    property string minutesResultText: ""
+
+    // 音频播放状态
+    property string currentPlayingFile: ""
+
+    MediaPlayer {
+        id: audioPlayer
+        audioOutput: AudioOutput { id: audioOutput }
+        onPlaybackStateChanged: {
+            if (playbackState === MediaPlayer.StoppedState) {
+                currentPlayingFile = "";
+            }
+        }
+    }
+
     // 主内容区
     Item {
         anchors.left: parent.left
@@ -362,56 +382,62 @@ Page {
             anchors.bottom: parent.bottom
             width: 220
             color: "#252542"
-            
+
             ColumnLayout {
                 anchors.fill: parent
                 anchors.topMargin: 20
                 spacing: 8
-                
+
                 // 菜单项
                 Repeater {
                     model: [
-                        { icon: "🏠", text: "首页", active: true },
-                        { icon: "📅", text: "会议日程", active: false },
-                        { icon: "📝", text: "历史会议", active: false },
-                        { icon: "👥", text: "通讯录", active: false }
+                        { icon: "🏠", text: "首页", page: "home" },
+                        { icon: "📅", text: "会议日程", page: "schedule" },
+                        { icon: "📝", text: "历史会议", page: "history" },
+                        { icon: "📁", text: "本地录制", page: "recordings" }
                     ]
-                    
+
                     delegate: Rectangle {
                         Layout.fillWidth: true
                         Layout.preferredHeight: 48
                         Layout.leftMargin: 12
                         Layout.rightMargin: 12
                         radius: 8
-                        color: modelData.active ? "#1E90FF" : 
+                        color: currentPage === modelData.page ? "#1E90FF" :
                                menuArea.containsMouse ? "#3D3D5C" : "transparent"
-                        
+
                         RowLayout {
                             anchors.fill: parent
                             anchors.leftMargin: 16
                             spacing: 12
-                            
+
                             Text {
                                 text: modelData.icon
                                 font.pixelSize: 18
                             }
-                            
+
                             Text {
                                 text: modelData.text
                                 font.pixelSize: 14
-                                color: modelData.active ? "white" : "#B0B0C0"
+                                color: currentPage === modelData.page ? "white" : "#B0B0C0"
                             }
                         }
-                        
+
                         MouseArea {
                             id: menuArea
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                currentPage = modelData.page;
+                                if (modelData.page === "recordings") {
+                                    aiAssistant.loadLocalRecordings();
+                                }
+                            }
                         }
                     }
                 }
-                
+
                 Item { Layout.fillHeight: true }
             }
         }
@@ -423,10 +449,12 @@ Page {
             anchors.top: parent.top
             anchors.bottom: parent.bottom
             anchors.margins: 24
-            
+
+            // ===== 首页内容 =====
             ColumnLayout {
                 anchors.fill: parent
                 spacing: 24
+                visible: currentPage === "home"
                 
                 // 快捷操作卡片
                 Rectangle {
@@ -803,6 +831,447 @@ Page {
                     }
                 }
             }
+
+            // ===== 本地录制管理面板 =====
+            ColumnLayout {
+                anchors.fill: parent
+                spacing: 16
+                visible: currentPage === "recordings"
+
+                // 标题
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 60
+                    radius: 16
+                    color: "#252542"
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 24
+                        anchors.rightMargin: 24
+                        spacing: 16
+
+                        Text {
+                            text: "📁 本地录制"
+                            font.pixelSize: 20
+                            font.bold: true
+                            color: "#FFFFFF"
+                        }
+
+                        Item { Layout.fillWidth: true }
+
+                        Text {
+                            text: (aiAssistant ? aiAssistant.localRecordings.length : 0) + " 个录音文件"
+                            font.pixelSize: 13
+                            color: "#808090"
+                        }
+                    }
+                }
+
+                // 录音列表
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    radius: 16
+                    color: "#252542"
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: 16
+                        spacing: 8
+
+                        // 列表头部
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 36
+                            color: "#2D2D4A"
+                            radius: 6
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 16
+                                anchors.rightMargin: 16
+                                spacing: 8
+
+                                Text { text: "会议名称"; font.pixelSize: 12; font.bold: true; color: "#808090"; Layout.fillWidth: true }
+                                Text { text: "时长"; font.pixelSize: 12; font.bold: true; color: "#808090"; Layout.preferredWidth: 60 }
+                                Text { text: "大小"; font.pixelSize: 12; font.bold: true; color: "#808090"; Layout.preferredWidth: 60 }
+                                Text { text: "日期"; font.pixelSize: 12; font.bold: true; color: "#808090"; Layout.preferredWidth: 130 }
+                                Text { text: "操作"; font.pixelSize: 12; font.bold: true; color: "#808090"; Layout.preferredWidth: 230; horizontalAlignment: Text.AlignHCenter }
+                            }
+                        }
+
+                        // 文件列表
+                        ListView {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            clip: true
+                            spacing: 4
+                            model: aiAssistant ? aiAssistant.localRecordings : []
+
+                            // 空状态
+                            Text {
+                                anchors.centerIn: parent
+                                text: "暂无本地录制\n\n在会议中点击录制按钮后，录音会自动保存到这里"
+                                font.pixelSize: 14
+                                color: "#808090"
+                                visible: parent.count === 0
+                                horizontalAlignment: Text.AlignHCenter
+                                lineHeight: 1.5
+                            }
+
+                            delegate: Rectangle {
+                                property bool isPlaying: currentPlayingFile === modelData.filePath && audioPlayer.playbackState === MediaPlayer.PlayingState
+                                width: ListView.view.width
+                                height: 56
+                                radius: 8
+                                color: isPlaying ? "#1A3A5C" : (recItemArea.containsMouse ? "#3D3D5C" : "#2D2D4A")
+                                border.width: isPlaying ? 1 : 0
+                                border.color: "#1E90FF"
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 16
+                                    anchors.rightMargin: 16
+                                    spacing: 8
+
+                                    // 会议名称
+                                    Text {
+                                        text: modelData.meetingTitle || modelData.fileName
+                                        font.pixelSize: 13
+                                        color: "#FFFFFF"
+                                        elide: Text.ElideRight
+                                        Layout.fillWidth: true
+                                    }
+
+                                    // 时长
+                                    Text {
+                                        text: modelData.durationStr
+                                        font.pixelSize: 12
+                                        color: "#B0B0C0"
+                                        Layout.preferredWidth: 60
+                                    }
+
+                                    // 大小
+                                    Text {
+                                        text: modelData.fileSizeStr
+                                        font.pixelSize: 12
+                                        color: "#B0B0C0"
+                                        Layout.preferredWidth: 60
+                                    }
+
+                                    // 日期
+                                    Text {
+                                        text: modelData.dateTime
+                                        font.pixelSize: 12
+                                        color: "#B0B0C0"
+                                        Layout.preferredWidth: 130
+                                    }
+
+                                    // 操作按钮
+                                    RowLayout {
+                                        Layout.preferredWidth: 230
+                                        spacing: 4
+
+                                        // 播放
+                                        Button {
+                                            implicitWidth: 42
+                                            implicitHeight: 28
+                                            background: Rectangle {
+                                                radius: 6
+                                                color: isPlaying ? "#FF9800" : (parent.parent.parent.parent.isPlaying ? "#FF9800" : (parent.hovered ? "#AB47BC" : "#7B1FA2"))
+                                            }
+                                            contentItem: Text {
+                                                text: currentPlayingFile === modelData.filePath && audioPlayer.playbackState === MediaPlayer.PlayingState ? "⏸" : "▶"
+                                                font.pixelSize: 14
+                                                color: "white"
+                                                horizontalAlignment: Text.AlignHCenter
+                                                verticalAlignment: Text.AlignVCenter
+                                            }
+                                            onClicked: {
+                                                if (currentPlayingFile === modelData.filePath && audioPlayer.playbackState === MediaPlayer.PlayingState) {
+                                                    audioPlayer.pause();
+                                                } else {
+                                                    currentPlayingFile = modelData.filePath;
+                                                    audioPlayer.source = "file:///" + modelData.filePath.replace(/\\\\/g, "/");
+                                                    audioPlayer.play();
+                                                }
+                                            }
+                                        }
+
+                                        // 转录
+                                        Button {
+                                            implicitWidth: 52
+                                            implicitHeight: 28
+                                            enabled: aiAssistant ? (!aiAssistant.isTranscribing && !aiAssistant.isBusy) : false
+                                            background: Rectangle {
+                                                radius: 6
+                                                color: parent.enabled ? (parent.hovered ? "#66BB6A" : "#4CAF50") : "#555"
+                                            }
+                                            contentItem: Text {
+                                                text: "🎯 转录"
+                                                font.pixelSize: 11
+                                                color: "white"
+                                                horizontalAlignment: Text.AlignHCenter
+                                                verticalAlignment: Text.AlignVCenter
+                                            }
+                                            onClicked: {
+                                                aiAssistant.transcribeLocalFile(modelData.filePath)
+                                            }
+                                        }
+
+                                        // 生成纪要
+                                        Button {
+                                            implicitWidth: 52
+                                            implicitHeight: 28
+                                            enabled: aiAssistant ? (!aiAssistant.isTranscribing && !aiAssistant.isBusy) : false
+                                            background: Rectangle {
+                                                radius: 6
+                                                color: parent.enabled ? (parent.hovered ? "#42A5F5" : "#1E90FF") : "#555"
+                                            }
+                                            contentItem: Text {
+                                                text: "📋 纪要"
+                                                font.pixelSize: 11
+                                                color: "white"
+                                                horizontalAlignment: Text.AlignHCenter
+                                                verticalAlignment: Text.AlignVCenter
+                                            }
+                                            onClicked: {
+                                                aiAssistant.generateMinutesFromFile(modelData.filePath)
+                                            }
+                                        }
+
+                                        // 删除
+                                        Button {
+                                            implicitWidth: 52
+                                            implicitHeight: 28
+                                            background: Rectangle {
+                                                radius: 6
+                                                color: parent.hovered ? "#EF5350" : "#3D3D5C"
+                                            }
+                                            contentItem: Text {
+                                                text: "🗑 删除"
+                                                font.pixelSize: 11
+                                                color: parent.hovered ? "white" : "#B0B0C0"
+                                                horizontalAlignment: Text.AlignHCenter
+                                                verticalAlignment: Text.AlignVCenter
+                                            }
+                                            onClicked: {
+                                                aiAssistant.deleteLocalRecording(index)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: recItemArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    acceptedButtons: Qt.NoButton
+                                }
+                            }
+                        }
+
+                        // 播放控制栏
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: currentPlayingFile !== "" ? 48 : 0
+                            visible: currentPlayingFile !== ""
+                            color: "#1A2A4A"
+                            radius: 8
+                            clip: true
+
+                            Behavior on Layout.preferredHeight {
+                                NumberAnimation { duration: 200 }
+                            }
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 16
+                                anchors.rightMargin: 16
+                                spacing: 12
+
+                                Text {
+                                    text: audioPlayer.playbackState === MediaPlayer.PlayingState ? "🔊 正在播放" : "⏸ 已暂停"
+                                    font.pixelSize: 12
+                                    color: "#4FC3F7"
+                                }
+
+                                // 进度条
+                                Slider {
+                                    Layout.fillWidth: true
+                                    from: 0
+                                    to: audioPlayer.duration > 0 ? audioPlayer.duration : 1
+                                    value: audioPlayer.position
+                                    onMoved: audioPlayer.position = value
+
+                                    background: Rectangle {
+                                        x: parent.leftPadding
+                                        y: parent.topPadding + parent.availableHeight / 2 - height / 2
+                                        width: parent.availableWidth
+                                        height: 4
+                                        radius: 2
+                                        color: "#3D3D5C"
+
+                                        Rectangle {
+                                            width: parent.parent.visualPosition * parent.width
+                                            height: parent.height
+                                            radius: 2
+                                            color: "#1E90FF"
+                                        }
+                                    }
+
+                                    handle: Rectangle {
+                                        x: parent.leftPadding + parent.visualPosition * (parent.availableWidth - width)
+                                        y: parent.topPadding + parent.availableHeight / 2 - height / 2
+                                        width: 12
+                                        height: 12
+                                        radius: 6
+                                        color: "#1E90FF"
+                                    }
+                                }
+
+                                // 时间显示
+                                Text {
+                                    property int pos: Math.floor(audioPlayer.position / 1000)
+                                    property int dur: Math.floor(audioPlayer.duration / 1000)
+                                    text: String(Math.floor(pos/60)).padStart(2,'0') + ":" + String(pos%60).padStart(2,'0') + " / " + String(Math.floor(dur/60)).padStart(2,'0') + ":" + String(dur%60).padStart(2,'0')
+                                    font.pixelSize: 11
+                                    color: "#B0B0C0"
+                                }
+
+                                // 停止按钮
+                                Button {
+                                    implicitWidth: 28
+                                    implicitHeight: 28
+                                    background: Rectangle {
+                                        radius: 6
+                                        color: parent.hovered ? "#EF5350" : "#3D3D5C"
+                                    }
+                                    contentItem: Text {
+                                        text: "⏹"
+                                        font.pixelSize: 14
+                                        color: "white"
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+                                    onClicked: {
+                                        audioPlayer.stop();
+                                        currentPlayingFile = "";
+                                    }
+                                }
+                            }
+                        }
+
+                        // 处理中提示
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: (aiAssistant && (aiAssistant.isTranscribing || aiAssistant.isBusy)) ? 40 : 0
+                            visible: aiAssistant ? (aiAssistant.isTranscribing || aiAssistant.isBusy) : false
+                            color: "#1E2A2E"
+                            radius: 8
+                            clip: true
+
+                            RowLayout {
+                                anchors.centerIn: parent
+                                spacing: 8
+
+                                BusyIndicator {
+                                    Layout.preferredWidth: 16
+                                    Layout.preferredHeight: 16
+                                    running: true
+                                }
+
+                                Text {
+                                    text: (aiAssistant && aiAssistant.isTranscribing) ? "正在转录中..." : "正在生成会议纪要..."
+                                    font.pixelSize: 12
+                                    color: "#4FC3F7"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 会议纪要结果弹窗
+    Dialog {
+        id: minutesDialog
+        anchors.centerIn: parent
+        width: Math.min(parent.width * 0.7, 600)
+        height: Math.min(parent.height * 0.7, 500)
+        title: "会议纪要"
+        modal: true
+        standardButtons: Dialog.Close
+
+        background: Rectangle {
+            radius: 12
+            color: "#252542"
+            border.color: "#3D3D5C"
+            border.width: 1
+        }
+
+        header: Rectangle {
+            color: "transparent"
+            height: 48
+            Text {
+                anchors.centerIn: parent
+                text: "📋 会议纪要"
+                font.pixelSize: 16
+                font.bold: true
+                color: "#FFFFFF"
+            }
+        }
+
+        contentItem: Flickable {
+            contentHeight: minutesText.implicitHeight
+            clip: true
+
+            Text {
+                id: minutesText
+                width: parent.width
+                text: minutesResultText
+                font.pixelSize: 13
+                color: "#D0D0E0"
+                wrapMode: Text.Wrap
+                lineHeight: 1.4
+                padding: 16
+            }
+        }
+
+        footer: DialogButtonBox {
+            alignment: Qt.AlignHCenter
+            background: Rectangle { color: "transparent" }
+            delegate: Button {
+                text: "关闭"
+                font.pixelSize: 14
+                background: Rectangle {
+                    radius: 6
+                    color: parent.pressed ? "#1873CC" : "#1E90FF"
+                }
+                contentItem: Text {
+                    text: parent.text
+                    font: parent.font
+                    color: "white"
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+        }
+    }
+
+    // AI 信号连接
+    Connections {
+        target: aiAssistant
+
+        function onMinutesFromFileReceived(minutes) {
+            minutesResultText = minutes
+            minutesDialog.open()
+        }
+
+        function onFileTranscriptionCompleted(filePath, transcript) {
+            console.log("[HomePage] 文件转录完成: " + filePath)
         }
     }
 }

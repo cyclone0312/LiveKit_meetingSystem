@@ -115,16 +115,33 @@ int main(int argc, char *argv[]) {
                  << meetingController.liveKitManager()->currentUser();
       });
 
-  // 离开房间时停止录音并清空房间名
+  // 离开房间时自动保存录音并清空房间名
   QObject::connect(meetingController.liveKitManager(),
                    &LiveKitManager::disconnected, &aiAssistant,
                    [&aiAssistant]() {
-                     // 如果正在录音，直接停止（不提交转录）
+                     // 如果正在录音，自动保存到本地文件
                      if (aiAssistant.isRecordingAudio()) {
-                       // 不调用 stopRecordingAndTranscribe，因为房间已断开
-                       // 直接通知 QML 录音已停止
+                       qDebug() << "[main] 会议断开，自动保存录音";
+                       aiAssistant.saveRecordingToFile();
                      }
                      aiAssistant.setRoomName("");
+                   });
+
+  // ========== 录制按钮联动 AI 录音 ==========
+  // 点击视频录制按钮时，自动启动/停止 AI 音频录音
+  QObject::connect(&meetingController, &MeetingController::recordingChanged,
+                   &aiAssistant, [&meetingController, &aiAssistant]() {
+                     if (meetingController.isRecording()) {
+                       // 开始录制 → 自动启动 AI 录音
+                       qDebug() << "[main] 录制按钮开启，联动启动 AI 录音";
+                       aiAssistant.startRecording();
+                     } else {
+                       // 停止录制 → 自动保存录音到本地（不立即转录）
+                       if (aiAssistant.isRecordingAudio()) {
+                         qDebug() << "[main] 录制按钮关闭，联动保存录音";
+                         aiAssistant.saveRecordingToFile();
+                       }
+                     }
                    });
 
   // 麦克风 PCM 数据 → AI 语音转录缓冲

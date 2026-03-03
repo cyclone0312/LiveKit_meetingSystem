@@ -415,6 +415,31 @@ Item {
                                 aiAssistant.stopRecordingAndTranscribe();
                             }
                         }
+
+                        // 转录本地文件 按钮
+                        Button {
+                            implicitWidth: 100
+                            implicitHeight: 32
+                            visible: !aiAssistant.isRecordingAudio && !aiAssistant.isTranscribing
+                            enabled: !aiAssistant.isTranscribing && aiAssistant.localRecordings.length > 0
+
+                            background: Rectangle {
+                                radius: 6
+                                color: parent.enabled ? (parent.hovered ? "#42A5F5" : "#1E90FF") : "#555"
+                            }
+
+                            contentItem: Text {
+                                text: "📂 转录文件"
+                                font.pixelSize: 12
+                                color: "white"
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
+
+                            onClicked: {
+                                localFilePopup.open()
+                            }
+                        }
                     }
                 }
 
@@ -730,6 +755,15 @@ Item {
                 "text": "❌ 转录失败: " + error
             });
         }
+
+        function onRecordingSaved(filePath) {
+            console.log("[AIPanel] 录音已保存: " + filePath);
+        }
+
+        function onFileTranscriptionCompleted(filePath, transcript) {
+            console.log("[AIPanel] 文件转录完成: " + filePath);
+            localFilePopup.close();
+        }
     }
 
     // ====== 辅助函数 ======
@@ -791,6 +825,103 @@ Item {
             color: "#4FC3F7"
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
+        }
+    }
+
+    // ====== 本地录音选择弹窗 ======
+    Popup {
+        id: localFilePopup
+        anchors.centerIn: parent
+        width: 280
+        height: Math.min(350, 60 + aiAssistant.localRecordings.length * 60)
+        modal: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+        background: Rectangle {
+            color: "#252542"
+            radius: 12
+            border.color: "#3D3D5C"
+            border.width: 1
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 8
+
+            Text {
+                text: "选择录音文件"
+                font.pixelSize: 14
+                font.bold: true
+                color: "#FFFFFF"
+                Layout.fillWidth: true
+                horizontalAlignment: Text.AlignHCenter
+            }
+
+            ListView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                spacing: 4
+                model: aiAssistant.localRecordings
+
+                delegate: Rectangle {
+                    width: ListView.view.width
+                    height: 52
+                    radius: 6
+                    color: fileItemArea.containsMouse ? "#3D3D5C" : "#2D2D4A"
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 8
+                        spacing: 8
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 2
+
+                            Text {
+                                text: modelData.meetingTitle || modelData.fileName
+                                font.pixelSize: 12
+                                color: "#FFFFFF"
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+
+                            Text {
+                                text: modelData.durationStr + " | " + modelData.fileSizeStr + " | " + modelData.dateTime
+                                font.pixelSize: 10
+                                color: "#808090"
+                            }
+                        }
+
+                        Button {
+                            implicitWidth: 48
+                            implicitHeight: 24
+                            background: Rectangle {
+                                radius: 4
+                                color: parent.hovered ? "#66BB6A" : "#4CAF50"
+                            }
+                            contentItem: Text {
+                                text: "转录"
+                                font.pixelSize: 10
+                                color: "white"
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                            onClicked: {
+                                aiAssistant.transcribeLocalFile(modelData.filePath);
+                            }
+                        }
+                    }
+
+                    MouseArea {
+                        id: fileItemArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        acceptedButtons: Qt.NoButton
+                    }
+                }
+            }
         }
     }
 }

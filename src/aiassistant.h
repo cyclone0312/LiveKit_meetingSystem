@@ -7,6 +7,7 @@
  * 2. 本地录制麦克风音频（PCM 缓冲）
  * 3. 停止录制后，将音频组装为 WAV 发送到后端进行离线 ASR 转录
  * 4. 管理转录历史，供会议纪要生成使用
+ * 5. 本地录音文件管理（保存/读取/删除/转录/生成纪要）
  */
 
 #ifndef AIASSISTANT_H
@@ -14,10 +15,13 @@
 
 #include <QByteArray>
 #include <QDateTime>
+#include <QDir>
 #include <QMutex>
 #include <QNetworkAccessManager>
 #include <QNetworkRequest>
 #include <QObject>
+#include <QSettings>
+#include <QStandardPaths>
 #include <QString>
 #include <QStringList>
 #include <QTimer>
@@ -49,6 +53,10 @@ class AIAssistant : public QObject {
   Q_PROPERTY(QString recordingDuration READ recordingDuration NOTIFY
                  recordingDurationChanged)
 
+  // ====== 本地录音文件管理 ======
+  Q_PROPERTY(QVariantList localRecordings READ localRecordings NOTIFY
+                 localRecordingsChanged)
+
   // ====== 配置 ======
   Q_PROPERTY(QString serverUrl READ serverUrl WRITE setServerUrl NOTIFY
                  serverUrlChanged)
@@ -69,6 +77,7 @@ public:
   bool isTranscribing() const;
   int transcriptCount() const;
   QString recordingDuration() const;
+  QVariantList localRecordings() const;
   QString serverUrl() const;
   QString roomName() const;
   QString userName() const;
@@ -136,6 +145,37 @@ public slots:
    */
   void clearTranscripts();
 
+  // ====== 本地录音文件管理 ======
+
+  /**
+   * @brief 保存当前录音缓冲到本地文件（不转录）
+   * 在停止录制按钮联动时调用
+   */
+  Q_INVOKABLE void saveRecordingToFile();
+
+  /**
+   * @brief 转录指定的本地录音文件
+   * @param filePath WAV 文件绝对路径
+   */
+  Q_INVOKABLE void transcribeLocalFile(const QString &filePath);
+
+  /**
+   * @brief 从本地录音文件生成会议纪要
+   * @param filePath WAV 文件绝对路径
+   */
+  Q_INVOKABLE void generateMinutesFromFile(const QString &filePath);
+
+  /**
+   * @brief 删除指定索引的本地录音
+   * @param index 录音在列表中的索引
+   */
+  Q_INVOKABLE void deleteLocalRecording(int index);
+
+  /**
+   * @brief 加载本地录音列表
+   */
+  Q_INVOKABLE void loadLocalRecordings();
+
 signals:
   // AI 对话信号
   void busyChanged();
@@ -156,6 +196,13 @@ signals:
   void newTranscriptReceived(const QString &text);
   void transcriptionCompleted(const QString &fullText);
   void transcriptionFailed(const QString &error);
+
+  // 本地录音管理信号
+  void localRecordingsChanged();
+  void recordingSaved(const QString &filePath);
+  void fileTranscriptionCompleted(const QString &filePath,
+                                  const QString &transcript);
+  void minutesFromFileReceived(const QString &minutes);
 
   // 配置信号
   void serverUrlChanged();
@@ -190,6 +237,19 @@ private:
   QByteArray buildWavFile(const QByteArray &pcmData, int sampleRate = 16000,
                           int channels = 1, int bitsPerSample = 16) const;
 
+  /**
+   * @brief 获取本地录音存储目录
+   */
+  QString recordingsDir() const;
+
+  /**
+   * @brief 保存/读取录音元数据到 QSettings
+   */
+  void saveRecordingMeta(const QString &filePath, const QString &meetingTitle,
+                         const QString &roomName, const QString &userName,
+                         int durationSec, qint64 fileSize);
+  void removeRecordingMeta(int index);
+
 private:
   QNetworkAccessManager *m_networkManager;
 
@@ -210,6 +270,9 @@ private:
   QTimer *m_recordingTimer;       // 录音计时器（更新时长显示）
   int m_recordingSeconds;         // 已录音秒数
   QList<TranscriptEntry> m_transcripts; // 全部已确认的转录历史
+
+  // 本地录音文件列表缓存
+  QVariantList m_localRecordings;
 };
 
 #endif // AIASSISTANT_H
