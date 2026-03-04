@@ -83,11 +83,9 @@ windeployqt.exe --release --qmldir "C:\Users\86158\Desktop\meeting\resources\qml
 你的项目使用了 LiveKit SDK，需要手动复制相关 DLL：
 
 ```powershell
-# 复制 LiveKit SDK 的 DLL 文件
-copy "C:\Users\86158\Desktop\meeting\livekit-sdk-windows-x64\bin\release\livekit_ffi.dll" "C:\MeetingApp_Release\"
-copy "C:\Users\86158\Desktop\meeting\livekit-sdk-windows-x64\bin\release\abseil_dll.dll" "C:\MeetingApp_Release\"
-copy "C:\Users\86158\Desktop\meeting\livekit-sdk-windows-x64\bin\release\libprotobuf.dll" "C:\MeetingApp_Release\"
-copy "C:\Users\86158\Desktop\meeting\livekit-sdk-windows-x64\bin\release\SDL3.dll" "C:\MeetingApp_Release\"
+# 复制 LiveKit SDK 的 DLL 文件 (Release 模式只需这两个)
+copy "C:\Users\86158\Desktop\meeting\extend\livekit-sdk-windows\bin\livekit_ffi.dll" "C:\MeetingApp_Release\"
+copy "C:\Users\86158\Desktop\meeting\extend\livekit-sdk-windows\bin\livekit.dll" "C:\MeetingApp_Release\"
 ```
 
 ---
@@ -129,10 +127,8 @@ MeetingApp_Release/
 ├── Qt6Network.dll              # 网络库
 ├── Qt6WebSockets.dll           # WebSocket库
 ├── Qt6Concurrent.dll           # 并发库
-├── livekit_ffi.dll             # LiveKit SDK
-├── abseil_dll.dll              # LiveKit 依赖
-├── libprotobuf.dll             # LiveKit 依赖
-├── SDL3.dll                    # LiveKit 音视频依赖
+├── livekit.dll                 # LiveKit 核心库 (内嵌abseil等依赖)
+├── livekit_ffi.dll             # LiveKit SDK FFI接口库
 ├── platforms/                  # Qt平台插件
 │   └── qwindows.dll
 ├── imageformats/               # 图像格式插件
@@ -246,13 +242,12 @@ Copy-Item "$BuildDir\MeetingApp.exe" $OutputDir
 
 # 4. 复制 LiveKit DLL
 $LiveKitDlls = @(
-    "livekit_ffi.dll",
-    "abseil_dll.dll",
-    "libprotobuf.dll",
-    "SDL3.dll"
+    "livekit.dll",
+    "livekit_ffi.dll"
 )
 foreach ($dll in $LiveKitDlls) {
-    Copy-Item "$ProjectDir\livekit-sdk-windows-x64\bin\release\$dll" $OutputDir
+    # 路径根据实际LiveKit SDK存放位置获取
+    Copy-Item "$ProjectDir\build\_deps\livekit-build\$dll" $OutputDir
 }
 
 Write-Host "打包完成！输出目录: $OutputDir" -ForegroundColor Green

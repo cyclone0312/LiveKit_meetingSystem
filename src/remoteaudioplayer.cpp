@@ -145,9 +145,11 @@ bool RemoteAudioPlayer::initAudioOutput(int sampleRate, int channels) {
   m_audioSink = std::make_unique<QAudioSink>(outputDevice, format);
   m_audioSink->setVolume(m_volume);
 
-  // 设置适中的缓冲区，平衡延迟和稳定性
-  m_audioSink->setBufferSize(sampleRate * channels * sizeof(int16_t) /
-                             10); // 100ms 缓冲
+  // 设置音频缓冲区
+  // 【优化】缓冲区从 100ms 增大到 300ms，解决网络抖动导致的音频断续和杂音
+  // 300ms 的延迟在视频会议中几乎感知不到，但能大幅提升音频稳定性
+  m_audioSink->setBufferSize(sampleRate * channels * sizeof(int16_t) * 3 /
+                             10); // 300ms 缓冲
 
   // 启动音频输出
   m_audioDevice = m_audioSink->start();

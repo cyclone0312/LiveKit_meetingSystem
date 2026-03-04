@@ -7,6 +7,7 @@
 #include <QDebug>
 #include <QImage>
 #include <QVideoFrameFormat>
+#include <chrono>
 #include <thread>
 
 RemoteVideoRenderer::RemoteVideoRenderer(
@@ -87,6 +88,10 @@ void RemoteVideoRenderer::renderLoop() {
            << m_participantId;
 
   int frameCount = 0;
+  // 【优化】帧率控制 — 最多 30fps 显示，避免主线程事件队列堆积
+  const auto minFrameInterval =
+      std::chrono::microseconds(1000000 / 30); // 30fps
+  auto lastFrameTime = std::chrono::steady_clock::now();
 
   while (m_running.load() && m_videoStream) {
     livekit::VideoFrameEvent event;
@@ -107,6 +112,15 @@ void RemoteVideoRenderer::renderLoop() {
 
     frameCount++;
 
+    // 【优化】帧率控制：跳过过快到达的帧，减轻主线程负担
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = now - lastFrameTime;
+    if (elapsed < minFrameInterval) {
+      // 帧到达太快，跳过这一帧
+      continue;
+    }
+    lastFrameTime = now;
+
     // 每 100 帧打印一次日志
     if (frameCount % 100 == 1) {
       qDebug() << "[RemoteVideoRenderer] 收到远程帧 #" << frameCount
@@ -119,16 +133,11 @@ void RemoteVideoRenderer::renderLoop() {
     QVideoFrame qtFrame = convertFrame(event.frame);
     if (qtFrame.isValid()) {
       QMutexLocker locker(&m_mutex);
-      // 【关键修复】将 QPointer 复制到局部变量
-      // 使用 QPointer 确保在 lambda 执行时能检测到对象是否已销毁
       QPointer<QVideoSink> sinkPointer = m_externalSink;
       if (sinkPointer) {
-        // 【关键修复】使用 QMetaObject::invokeMethod 确保在主线程设置视频帧
-        // lambda 捕获 QPointer，在执行时会自动检测对象是否仍然有效
         QMetaObject::invokeMethod(
             sinkPointer.data(),
             [sinkPointer, qtFrame]() {
-              // 再次检查 QPointer，因为在排队期间对象可能被销毁
               if (sinkPointer) {
                 sinkPointer->setVideoFrame(qtFrame);
               }
@@ -181,11 +190,16 @@ RemoteVideoRenderer::convertFrame(const livekit::VideoFrame &lkFrame) {
   int destBytesPerLine = frame.bytesPerLine(0);
   size_t srcBytesPerLine = width * 4;
 
-  // 按行复制（考虑可能的行对齐差异）
-  for (int y = 0; y < height; ++y) {
-    const uint8_t *srcRow = data + y * srcBytesPerLine;
-    uint8_t *destRow = destData + y * destBytesPerLine;
-    std::memcpy(destRow, srcRow, srcBytesPerLine);
+  // 【优化】当行字节数相同时，使用单次 memcpy 代替逐行复制
+  if (static_cast<size_t>(destBytesPerLine) == srcBytesPerLine) {
+    std::memcpy(destData, data, srcBytesPerLine * height);
+  } else {
+    // 行对齐不同时才需要逐行复制
+    for (int y = 0; y < height; ++y) {
+      const uint8_t *srcRow = data + y * srcBytesPerLine;
+      uint8_t *destRow = destData + y * destBytesPerLine;
+      std::memcpy(destRow, srcRow, srcBytesPerLine);
+    }
   }
 
   frame.unmap();

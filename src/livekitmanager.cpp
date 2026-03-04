@@ -989,6 +989,8 @@ void LiveKitManager::doPublishCameraTrack() {
     // 设置发布选项
     livekit::TrackPublishOptions options;
     options.source = livekit::TrackSource::SOURCE_CAMERA;
+    // 注：视频编码参数（码率、帧率）由客户端帧率控制 + LiveKit Server 的
+    // dynacast 配合实现
 
     // 发布轨道
     m_videoPublication = localParticipant->publishTrack(
