@@ -12,6 +12,9 @@
 #include <QMediaDevices>
 #include <thread>
 
+// 静态成员初始化
+livekit::AudioProcessingModule *RemoteAudioPlayer::s_apm = nullptr;
+
 RemoteAudioPlayer::RemoteAudioPlayer(std::shared_ptr<livekit::Track> audioTrack,
                                      QObject *parent)
     : QObject(parent), m_track(audioTrack) {
@@ -103,6 +106,19 @@ void RemoteAudioPlayer::setMuted(bool muted) {
   m_muted.store(muted);
   qDebug() << "[RemoteAudioPlayer] 参会者" << m_participantId
            << (muted ? "已静音" : "已取消静音");
+
+  // 【关键修复】取消静音时重新初始化 QAudioSink，清除缓冲区残留
+  // 避免旧缓冲区中的静音数据影响音量
+  if (!muted) {
+    QMutexLocker locker(&m_mutex);
+    if (m_audioSink) {
+      m_audioSink->stop();
+      m_audioSink.reset();
+      m_audioDevice = nullptr;
+      m_audioInitialized = false;
+      qDebug() << "[RemoteAudioPlayer] QAudioSink 已重置，等待重新初始化";
+    }
+  }
 }
 
 bool RemoteAudioPlayer::initAudioOutput(int sampleRate, int channels) {
@@ -191,6 +207,31 @@ void RemoteAudioPlayer::onAudioDataReady(QByteArray data, int sampleRate,
   // 检查音频设备状态
   if (!m_audioDevice || !m_audioSink) {
     return;
+  }
+
+  // 【关键】将播放音频作为回声消除的参考信号
+  // APM 通过 processReverseStream 学习扬声器的声音特征，然后在发送端的
+  // processStream 中消除回声
+  if (s_apm && !data.isEmpty()) {
+    // 将数据按 10ms 帧处理
+    const int samplesPerFrame10ms = sampleRate / 100;
+    const int frameTotalSamples = samplesPerFrame10ms * channels;
+    const int frameBytes = frameTotalSamples * sizeof(int16_t);
+    int offset = 0;
+
+    while (offset + frameBytes <= data.size()) {
+      std::vector<std::int16_t> frameData(frameTotalSamples);
+      std::memcpy(frameData.data(), data.constData() + offset, frameBytes);
+
+      livekit::AudioFrame reverseFrame(std::move(frameData), sampleRate,
+                                       channels, samplesPerFrame10ms);
+      try {
+        s_apm->processReverseStream(reverseFrame);
+      } catch (const std::exception &) {
+        // 忽略 APM 处理失败
+      }
+      offset += frameBytes;
+    }
   }
 
   // 写入音频数据

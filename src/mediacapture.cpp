@@ -4,10 +4,11 @@
  */
 
 #include "mediacapture.h"
+#include "remoteaudioplayer.h"
 #include <QDebug>
 #include <QMediaFormat>
+#include <QThread>
 #include <QVideoFrameFormat>
-#include <QtConcurrent>
 #include <chrono>
 
 // =============================================================================
@@ -151,8 +152,13 @@ void VideoFrameHandler::handleVideoFrame(const QVideoFrame &frame) {
 
 AudioFrameHandler::AudioFrameHandler(int sampleRate, int channels,
                                      QObject *parent)
-    : QIODevice(parent), m_sampleRate(sampleRate), m_numChannels(channels) {
+    : QIODevice(parent), m_sampleRate(sampleRate), m_numChannels(channels),
+      m_samplesPerFrame10ms(sampleRate / 100) {
   open(QIODevice::WriteOnly);
+  // 预分配缓冲区容量（10ms × channels × 2帧余量）
+  m_frameBuffer.reserve(m_samplesPerFrame10ms * channels * 2);
+  qDebug() << "[AudioFrameHandler] 10ms 帧大小:" << m_samplesPerFrame10ms
+           << "采样/声道 (采样率=" << sampleRate << "声道=" << channels << ")";
 }
 
 void AudioFrameHandler::setAudioSource(
@@ -173,10 +179,8 @@ qint64 AudioFrameHandler::readData(char *data, qint64 maxlen) {
 }
 
 qint64 AudioFrameHandler::writeData(const char *data, qint64 len) {
-  // 【关键修复原理：优雅退出 - 第一步】
-  // 检查停止标志（Atomic Flag）。这是"红绿灯"机制：
-  // 主线程在销毁资源前会亮起"红灯"(m_stopping=true)，
-  // 此时必须立即停止向后台发送数据，防止后台线程访问即将被销毁的资源。
+  // 【关键修复原理：优雅退出】
+  // 检查停止标志，主线程在销毁资源前会设置 m_stopping=true
   if (!m_enabled || !m_audioSource || m_stopping.load() || len <= 0) {
     return len; // 静默丢弃
   }
@@ -186,43 +190,55 @@ qint64 AudioFrameHandler::writeData(const char *data, qint64 len) {
                         m_numChannels);
 
   // 假设使用 16-bit PCM
-  int samples_per_channel = len / (2 * m_numChannels);
-
-  if (samples_per_channel <= 0) {
+  int totalSamples = static_cast<int>(len / sizeof(std::int16_t));
+  if (totalSamples <= 0) {
     return len;
   }
 
-  // 构建 int16_t 数据
-  std::vector<std::int16_t> audioData(len / 2);
-  std::memcpy(audioData.data(), data, len);
+  // 将新数据追加到帧缓冲区
+  const auto *samples = reinterpret_cast<const std::int16_t *>(data);
+  m_frameBuffer.insert(m_frameBuffer.end(), samples, samples + totalSamples);
 
-  // 捕获必要的变量，在后台线程发送音频帧
-  // 避免阻塞主线程，让视频和音频可以同时工作
-  auto audioSource = m_audioSource;
-  int sampleRate = m_sampleRate;
-  int numChannels = m_numChannels;
+  // 处理并发送积攒的 10ms 帧
+  processAndSendFrames();
 
-  QtConcurrent::run([audioSource, audioData = std::move(audioData), sampleRate,
-                     numChannels, samples_per_channel]() mutable {
-    // 创建 LiveKit AudioFrame
-    try {
-      // 【关键安全检查】确保 audioSource 仍然有效
-      if (!audioSource) {
-        return;
+  return len;
+}
+
+void AudioFrameHandler::processAndSendFrames() {
+  // 每帧总采样数 = 每声道采样数 × 声道数
+  const int frameTotalSamples = m_samplesPerFrame10ms * m_numChannels;
+
+  // 循环处理所有完整的 10ms 帧
+  while (static_cast<int>(m_frameBuffer.size()) >= frameTotalSamples) {
+    // 提取一帧
+    std::vector<std::int16_t> frameData(
+        m_frameBuffer.begin(), m_frameBuffer.begin() + frameTotalSamples);
+    m_frameBuffer.erase(m_frameBuffer.begin(),
+                        m_frameBuffer.begin() + frameTotalSamples);
+
+    // 创建 AudioFrame
+    livekit::AudioFrame audioFrame(std::move(frameData), m_sampleRate,
+                                   m_numChannels, m_samplesPerFrame10ms);
+
+    // 【关键】通过 APM 处理音频（降噪、回声消除、AGC、高通滤波）
+    if (m_apm) {
+      try {
+        m_apm->processStream(audioFrame);
+      } catch (const std::exception &e) {
+        // 忽略 APM 处理失败，仍然发送原始音频
       }
+    }
 
-      livekit::AudioFrame audioFrame(std::move(audioData), sampleRate,
-                                     numChannels, samples_per_channel);
-
-      // 发送到 LiveKit（在后台线程阻塞，不影响主线程）
-      // 【关键修复】使用 100ms 超时而非无限等待
-      audioSource->captureFrame(audioFrame, 100);
+    // 【关键修复】同步发送，queue_size_ms=0 时立即返回，不会阻塞
+    try {
+      if (m_audioSource && !m_stopping.load()) {
+        m_audioSource->captureFrame(audioFrame);
+      }
     } catch (const std::exception &e) {
       // 静默忽略，避免日志洪泛
     }
-  });
-
-  return len;
+  }
 }
 
 // =============================================================================
@@ -282,9 +298,25 @@ void MediaCapture::createLiveKitSources() {
   m_lkVideoSource =
       std::make_shared<livekit::VideoSource>(VIDEO_WIDTH, VIDEO_HEIGHT);
 
-  // 创建音频源 - 构造函数接受 (sample_rate, num_channels, queue_size_ms)
-  m_lkAudioSource = std::make_shared<livekit::AudioSource>(
-      AUDIO_SAMPLE_RATE, AUDIO_CHANNELS, 1000);
+  // 创建音频源 - queue_size_ms=0 为实时采集模式，最低延迟
+  m_lkAudioSource = std::make_shared<livekit::AudioSource>(AUDIO_SAMPLE_RATE,
+                                                           AUDIO_CHANNELS, 0);
+
+  // 【关键】创建音频处理模块（回声消除 + 降噪 + AGC + 高通滤波）
+  livekit::AudioProcessingModule::Options apmOpts;
+  apmOpts.echo_cancellation = true;
+  apmOpts.noise_suppression = true;
+  apmOpts.auto_gain_control = true;
+  apmOpts.high_pass_filter = true;
+  try {
+    m_apm = std::make_unique<livekit::AudioProcessingModule>(apmOpts);
+    qDebug() << "[MediaCapture] APM 创建成功 (回声消除+降噪+AGC+高通滤波)";
+    // 共享 APM 给 RemoteAudioPlayer，用于回声消除参考信号
+    RemoteAudioPlayer::setSharedAPM(m_apm.get());
+  } catch (const std::exception &e) {
+    qWarning() << "[MediaCapture] APM 创建失败:" << e.what();
+    m_apm.reset();
+  }
 
   // 设置到处理器
   m_videoHandler->setVideoSource(m_lkVideoSource);
@@ -293,6 +325,9 @@ void MediaCapture::createLiveKitSources() {
   m_audioHandler = std::make_unique<AudioFrameHandler>(AUDIO_SAMPLE_RATE,
                                                        AUDIO_CHANNELS, this);
   m_audioHandler->setAudioSource(m_lkAudioSource);
+  if (m_apm) {
+    m_audioHandler->setAPM(m_apm.get());
+  }
   // 转发原始 PCM 数据信号（供 AI 语音转录）
   connect(m_audioHandler.get(), &AudioFrameHandler::rawAudioCaptured, this,
           &MediaCapture::rawAudioCaptured);
@@ -444,7 +479,7 @@ void MediaCapture::resetLiveKitSources() {
   m_lkVideoSource =
       std::make_shared<livekit::VideoSource>(VIDEO_WIDTH, VIDEO_HEIGHT);
   m_lkAudioSource = std::make_shared<livekit::AudioSource>(
-      AUDIO_SAMPLE_RATE, AUDIO_CHANNELS, 1000);
+      AUDIO_SAMPLE_RATE, AUDIO_CHANNELS, 0); // 实时模式
 
   // 更新处理器中的源引用
   m_videoHandler->setVideoSource(m_lkVideoSource);
@@ -453,6 +488,9 @@ void MediaCapture::resetLiveKitSources() {
   m_audioHandler = std::make_unique<AudioFrameHandler>(AUDIO_SAMPLE_RATE,
                                                        AUDIO_CHANNELS, this);
   m_audioHandler->setAudioSource(m_lkAudioSource);
+  if (m_apm) {
+    m_audioHandler->setAPM(m_apm.get());
+  }
   // 【关键】重置停止标志，允许新的后台线程工作
   m_audioHandler->setStopping(false);
   // 转发原始 PCM 数据信号（供 AI 语音转录）
@@ -613,12 +651,15 @@ void MediaCapture::startMicrophone() {
 
     // 重新创建 AudioSource，使用实际格式
     m_lkAudioSource = std::make_shared<livekit::AudioSource>(
-        actualSampleRate, actualChannels, 1000);
+        actualSampleRate, actualChannels, 0); // 实时模式
 
     // 重新创建 AudioFrameHandler，使用实际格式
     m_audioHandler = std::make_unique<AudioFrameHandler>(actualSampleRate,
                                                          actualChannels, this);
     m_audioHandler->setAudioSource(m_lkAudioSource);
+    if (m_apm) {
+      m_audioHandler->setAPM(m_apm.get());
+    }
     // 转发原始 PCM 数据信号（供 AI 语音转录）
     connect(m_audioHandler.get(), &AudioFrameHandler::rawAudioCaptured, this,
             &MediaCapture::rawAudioCaptured);

@@ -31,6 +31,7 @@
 
 // LiveKit SDK
 #include <livekit/audio_frame.h>
+#include <livekit/audio_processing_module.h>
 #include <livekit/audio_source.h>
 #include <livekit/local_audio_track.h>
 #include <livekit/local_video_track.h>
@@ -80,6 +81,9 @@ public:
   void setEnabled(bool enabled);
   bool isEnabled() const { return m_enabled; }
 
+  // 设置音频处理模块（由 MediaCapture 拥有，此处仅引用）
+  void setAPM(livekit::AudioProcessingModule *apm) { m_apm = apm; }
+
   // 【关键】设置停止标志，让后台线程立即退出
   void setStopping(bool stopping) { m_stopping.store(stopping); }
   bool isStopping() const { return m_stopping.load(); }
@@ -99,11 +103,20 @@ signals:
                         int channels);
 
 private:
+  // 将积攒的 PCM 数据按 10ms 帧处理并发送
+  void processAndSendFrames();
+
   std::shared_ptr<livekit::AudioSource> m_audioSource;
+  livekit::AudioProcessingModule *m_apm =
+      nullptr; // 不拥有，由 MediaCapture 管理
   bool m_enabled = false;
   std::atomic<bool> m_stopping{false}; // 【关键】原子标志，用于安全停止后台线程
   int m_sampleRate;
   int m_numChannels;
+
+  // 10ms 帧缓冲（APM 要求每帧恰好 10ms）
+  std::vector<std::int16_t> m_frameBuffer;
+  int m_samplesPerFrame10ms = 0; // 每声道 10ms 的采样数
 };
 
 /**
@@ -257,6 +270,9 @@ private:
   std::shared_ptr<livekit::AudioSource> m_lkAudioSource;
   std::shared_ptr<livekit::LocalVideoTrack> m_lkVideoTrack;
   std::shared_ptr<livekit::LocalAudioTrack> m_lkAudioTrack;
+
+  // 音频处理模块（回声消除、噪声抑制、AGC、高通滤波）
+  std::unique_ptr<livekit::AudioProcessingModule> m_apm;
 
   // 设备列表
   QList<QCameraDevice> m_cameraDevices;

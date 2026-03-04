@@ -4,7 +4,7 @@
 # =============================================================================
 
 # LiveKit SDK 版本配置
-set(LIVEKIT_VERSION "0.2.7" CACHE STRING "LiveKit SDK version to download")
+set(LIVEKIT_VERSION "0.3.1" CACHE STRING "LiveKit SDK version to download" FORCE)
 set(LIVEKIT_SDK_DIR "${CMAKE_SOURCE_DIR}/extend/livekit-sdk-windows" CACHE PATH "LiveKit SDK install directory")
 
 # 下载 URL
@@ -105,7 +105,7 @@ else()
 endif()
 
 # ---------- 设置 SDK 路径变量 ----------
-# v0.2.7 新版目录结构:
+# v0.3.1 新版目录结构:
 #   bin/   -> livekit.dll, livekit_ffi.dll
 #   include/livekit/ -> 头文件
 #   lib/   -> livekit.lib, livekit_ffi.dll.lib

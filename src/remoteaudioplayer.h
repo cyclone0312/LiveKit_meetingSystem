@@ -23,6 +23,7 @@
 
 // LiveKit SDK
 #include <livekit/audio_frame.h>
+#include <livekit/audio_processing_module.h>
 #include <livekit/audio_stream.h>
 #include <livekit/track.h>
 
@@ -39,6 +40,12 @@ public:
   explicit RemoteAudioPlayer(std::shared_ptr<livekit::Track> audioTrack,
                              QObject *parent = nullptr);
   ~RemoteAudioPlayer();
+
+  /**
+   * @brief 设置共享的 APM（用于回声消除参考信号）
+   * 所有 RemoteAudioPlayer 实例共享同一个 APM，由 MediaCapture 拥有
+   */
+  static void setSharedAPM(livekit::AudioProcessingModule *apm) { s_apm = apm; }
 
   /**
    * @brief 获取关联的参会者 ID
@@ -119,6 +126,9 @@ private:
 
   // 互斥锁
   QMutex m_mutex;
+
+  // 共享的 APM（用于回声消除参考信号）
+  static livekit::AudioProcessingModule *s_apm;
 };
 
 #endif // REMOTEAUDIOPLAYER_H
