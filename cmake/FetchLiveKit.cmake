@@ -9,17 +9,8 @@ if(NOT DEFINED LIVEKIT_SDK_VERSION)
     set(LIVEKIT_SDK_VERSION "0.3.1")
 endif()
 
-# 架构配置（可选 x64, arm64）
-if(NOT DEFINED LINKS_SDK_ARCH)
-    set(LINKS_SDK_ARCH "x64")
-endif()
-string(TOLOWER "${LINKS_SDK_ARCH}" LIVEKIT_ARCH)
-if(NOT LIVEKIT_ARCH MATCHES "^(x64|arm64)$")
-    message(FATAL_ERROR "Unsupported LINKS_SDK_ARCH: ${LINKS_SDK_ARCH}. Expected x64 or arm64.")
-endif()
-
 # =============================================================================
-# 平台检测
+# 平台检测（必须在架构检测之前，macOS 需要据此设置默认架构）
 # =============================================================================
 if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
     set(LIVEKIT_PLATFORM "windows")
@@ -32,6 +23,21 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     set(LIVEKIT_ARCHIVE_EXT "tar.gz")
 else()
     message(FATAL_ERROR "Unsupported platform: ${CMAKE_SYSTEM_NAME}")
+endif()
+
+# 架构配置（可选 x64, arm64）
+# macOS 上 GitHub Actions macos-latest 为 Apple Silicon (arm64)，
+# 且 LiveKit 官方只发布了 macos-arm64 包，因此 macOS 默认 arm64。
+if(NOT DEFINED LINKS_SDK_ARCH)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+        set(LINKS_SDK_ARCH "arm64")
+    else()
+        set(LINKS_SDK_ARCH "x64")
+    endif()
+endif()
+string(TOLOWER "${LINKS_SDK_ARCH}" LIVEKIT_ARCH)
+if(NOT LIVEKIT_ARCH MATCHES "^(x64|arm64)$")
+    message(FATAL_ERROR "Unsupported LINKS_SDK_ARCH: ${LINKS_SDK_ARCH}. Expected x64 or arm64.")
 endif()
 
 # =============================================================================
