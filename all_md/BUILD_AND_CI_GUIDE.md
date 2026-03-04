@@ -1,6 +1,7 @@
 # MeetingApp 构建与 CI 完整知识讲解
 
 > 本文档覆盖三块内容：
+>
 > 1. **CMake 动态拉取依赖**（`FetchLiveKit.cmake` / `FetchGoogleTest.cmake` 的原理）
 > 2. **`build.cmd` 本地构建脚本**（每一步在做什么）
 > 3. **`git push` 与 GitHub Actions CI/CD**（代码推送到触发 Release 的全流程）
@@ -12,6 +13,7 @@
 ### 1.1 为什么要"动态拉取"？
 
 传统做法是把第三方库的 `.lib`/`.dll`/`.h` 直接放进仓库，缺点明显：
+
 - 二进制文件体积巨大，git 仓库膨胀
 - 换平台/版本需要手动替换文件
 - 不同开发者本地路径不同，CMake 找不到库
@@ -46,13 +48,13 @@ include(cmake/FetchLiveKit.cmake)
 
 #### 关键 CMake 命令解析
 
-| 命令 | 作用 |
-|------|------|
-| `file(DOWNLOAD url dest SHOW_PROGRESS STATUS ...)` | 在 configure 阶段从 URL 下载文件 |
-| `execute_process(COMMAND cmake -E tar xzf ...)` | 跨平台解压（cmake -E 是 CMake 内置工具集） |
-| `file(WRITE path content)` | 写入 stamp 文件，下次 configure 跳过下载 |
-| `file(GLOB var pattern)` | 列出匹配的文件/目录，用于探测解压后的目录结构 |
-| `file(RENAME src dst)` | 移动目录到最终位置 |
+| 命令                                               | 作用                                          |
+| -------------------------------------------------- | --------------------------------------------- |
+| `file(DOWNLOAD url dest SHOW_PROGRESS STATUS ...)` | 在 configure 阶段从 URL 下载文件              |
+| `execute_process(COMMAND cmake -E tar xzf ...)`    | 跨平台解压（cmake -E 是 CMake 内置工具集）    |
+| `file(WRITE path content)`                         | 写入 stamp 文件，下次 configure 跳过下载      |
+| `file(GLOB var pattern)`                           | 列出匹配的文件/目录，用于探测解压后的目录结构 |
+| `file(RENAME src dst)`                             | 移动目录到最终位置                            |
 
 #### 什么是 Stamp 文件？
 
@@ -61,6 +63,7 @@ third_party/livekit-sdk-windows-x64-0.3.1/.livekit-0.3.1.stamp
 ```
 
 这只是一个普通文本文件，内容无所谓。CMake 每次 configure 都检查：
+
 - **文件存在** → SDK 已下载完毕，直接跳到"设置路径"步骤
 - **文件不存在** → 重新下载解压
 
@@ -71,6 +74,7 @@ third_party/livekit-sdk-windows-x64-0.3.1/.livekit-0.3.1.stamp
 ### 1.3 Imported Target 是什么？
 
 传统链接方式（脆弱，依赖硬编码路径）：
+
 ```cmake
 # 旧方式：直接写死路径
 target_link_libraries(MyApp PRIVATE "${SDK_DIR}/lib/livekit.lib")
@@ -78,6 +82,7 @@ target_include_directories(MyApp PRIVATE "${SDK_DIR}/include")
 ```
 
 **Imported Target** 方式（现代 CMake 推荐）：
+
 ```cmake
 # 创建一个"虚拟目标"，把所有信息封装进去
 add_library(LiveKit::livekit SHARED IMPORTED)
@@ -92,6 +97,7 @@ target_link_libraries(MyApp PRIVATE LiveKit::livekit)
 ```
 
 优点：
+
 - 头文件路径自动通过 `INTERFACE_INCLUDE_DIRECTORIES` 传播
 - 支持 `IMPORTED_CONFIGURATIONS`（Debug/Release 分别配置）
 - 符合现代 CMake 的 **target-based** 设计理念
@@ -118,11 +124,11 @@ FetchContent_MakeAvailable(googletest)
 
 **FetchContent vs 手动下载的区别：**
 
-| | `FetchContent` | 手动 `file(DOWNLOAD)` |
-|-|----------------|----------------------|
-| 适用对象 | 有 CMakeLists.txt 的源码库 | 预编译的二进制 SDK/压缩包 |
-| 构建方式 | 把库的源码一起编译进来 | 直接链接预编译的 .lib/.so |
-| 缓存位置 | `build/_deps/` | 自定义（本项目用 `third_party/`）|
+|          | `FetchContent`             | 手动 `file(DOWNLOAD)`             |
+| -------- | -------------------------- | --------------------------------- |
+| 适用对象 | 有 CMakeLists.txt 的源码库 | 预编译的二进制 SDK/压缩包         |
+| 构建方式 | 把库的源码一起编译进来     | 直接链接预编译的 .lib/.so         |
+| 缓存位置 | `build/_deps/`             | 自定义（本项目用 `third_party/`） |
 
 ---
 
@@ -133,6 +139,7 @@ LiveKit 官方 Release 页面中，macOS 只发布了 `livekit-sdk-macos-arm64-0
 **不存在** `livekit-sdk-macos-x64-0.3.1.tar.gz`，所以下载报 HTTP 404。
 
 修复方法：在 `FetchLiveKit.cmake` 中，检测到 macOS 时将默认架构设为 `arm64`：
+
 ```cmake
 if(NOT DEFINED LINKS_SDK_ARCH)
     if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
@@ -190,13 +197,13 @@ cmake -S "%PROJECT_DIR%" -B "%BUILD_DIR%" ^
     -DCMAKE_CXX_COMPILER="cl.exe"
 ```
 
-| 参数 | 含义 |
-|------|------|
-| `-S` | 源码目录（CMakeLists.txt 所在位置） |
-| `-B` | 构建目录（生成 build.ninja 等文件） |
-| `-G Ninja` | 使用 Ninja 作为构建系统（比 MSBuild 快很多） |
-| `-DCMAKE_BUILD_TYPE` | Release 或 Debug（影响优化级别、调试符号） |
-| `-DCMAKE_PREFIX_PATH` | Qt 安装目录，`find_package(Qt6)` 从这里找 |
+| 参数                     | 含义                                          |
+| ------------------------ | --------------------------------------------- |
+| `-S`                     | 源码目录（CMakeLists.txt 所在位置）           |
+| `-B`                     | 构建目录（生成 build.ninja 等文件）           |
+| `-G Ninja`               | 使用 Ninja 作为构建系统（比 MSBuild 快很多）  |
+| `-DCMAKE_BUILD_TYPE`     | Release 或 Debug（影响优化级别、调试符号）    |
+| `-DCMAKE_PREFIX_PATH`    | Qt 安装目录，`find_package(Qt6)` 从这里找     |
 | `-DCMAKE_C/CXX_COMPILER` | 明确指定用 MSVC 的 cl.exe 而不是 MinGW 的 gcc |
 
 > `configure` 阶段不编译任何代码，只是"读 CMakeLists.txt → 生成构建文件（build.ninja）"。
@@ -258,6 +265,7 @@ Git 的三层模型：
 #### commit 是什么？
 
 每个 commit 是项目在某一时刻的完整快照，包含：
+
 - 所有文件的内容（通过 SHA-1 哈希存储）
 - 作者、时间、提交信息
 - 指向父 commit 的指针（形成链表）
@@ -273,12 +281,13 @@ HEAD → main → [commit f0aff3d] → [commit b53ddfa] → ...
 ```yaml
 on:
   push:
-    branches: [main]   # ← push 到 main 分支时触发
+    branches: [main] # ← push 到 main 分支时触发
   pull_request:
-    branches: [main]   # ← 向 main 发起 PR 时触发
+    branches: [main] # ← 向 main 发起 PR 时触发
 ```
 
 每次 `git push origin main` 后，GitHub 检测到事件，自动：
+
 1. 在云端创建一个全新的虚拟机（Runner）
 2. 按 `.github/workflows/ci.yml` 的定义执行每个 step
 3. 结果显示在 GitHub 仓库的 Actions 标签页
@@ -291,9 +300,9 @@ on:
 
 ```yaml
 jobs:
-  build-windows:  ──┐
-  build-linux:    ──┼── 三个 job 同时在不同机器上并行运行
-  build-macos:    ──┘
+  build-windows: ──┐
+  build-linux: ──┼── 三个 job 同时在不同机器上并行运行
+  build-macos: ──┘
 ```
 
 Jobs 之间默认并行，总时间取决于最慢的那个。
@@ -303,11 +312,12 @@ Jobs 之间默认并行，总时间取决于最慢的那个。
 ```yaml
 - uses: actions/cache@v4
   with:
-    path: third_party                           # 缓存的目录
+    path: third_party # 缓存的目录
     key: livekit-sdk-windows-x64-${{ hashFiles('cmake/FetchLiveKit.cmake') }}
 ```
 
 工作原理：
+
 1. **第一次运行**：`third_party/` 不存在于缓存 → CMake 下载 SDK → job 结束后 Actions 把 `third_party/` 打包存入缓存
 2. **后续运行**：key 匹配 → 直接从缓存恢复 `third_party/`，CMake 检测到 stamp 文件存在，跳过下载
 
@@ -315,13 +325,13 @@ Jobs 之间默认并行，总时间取决于最慢的那个。
 
 #### 三平台的不同点
 
-| | Windows | Linux | macOS |
-|-|---------|-------|-------|
-| Runner | `windows-latest` | `ubuntu-latest` | `macos-latest` |
-| 编译器配置 | `ilammy/msvc-dev-cmd` + `cl.exe` | 系统 GCC（无需额外配置） | 系统 Clang（无需额外配置） |
-| 额外安装 | — | `apt-get` 安装 X11/GStreamer 等 | `brew install ninja` |
-| SDK 架构 | x64 | x64 | **arm64**（Apple Silicon）|
-| 并行参数 | `$env:NUMBER_OF_PROCESSORS` | `$(nproc)` | `$(sysctl -n hw.logicalcpu)` |
+|            | Windows                          | Linux                           | macOS                        |
+| ---------- | -------------------------------- | ------------------------------- | ---------------------------- |
+| Runner     | `windows-latest`                 | `ubuntu-latest`                 | `macos-latest`               |
+| 编译器配置 | `ilammy/msvc-dev-cmd` + `cl.exe` | 系统 GCC（无需额外配置）        | 系统 Clang（无需额外配置）   |
+| 额外安装   | —                                | `apt-get` 安装 X11/GStreamer 等 | `brew install ninja`         |
+| SDK 架构   | x64                              | x64                             | **arm64**（Apple Silicon）   |
+| 并行参数   | `$env:NUMBER_OF_PROCESSORS`      | `$(nproc)`                      | `$(sysctl -n hw.logicalcpu)` |
 
 ---
 
@@ -333,13 +343,14 @@ Jobs 之间默认并行，总时间取决于最慢的那个。
 on:
   push:
     tags:
-      - "v*"   # 匹配 v1.0.0、v2.3.1-beta 等
+      - "v*" # 匹配 v1.0.0、v2.3.1-beta 等
 ```
 
 - **Branch push**：代码的每次日常提交，触发 CI 检查
 - **Tag push**：发布某个版本时才触发，代表"这是一个正式版本"
 
 创建并推送 Tag：
+
 ```bash
 git tag v1.0.0           # 在当前 commit 上打标签
 git push origin v1.0.0   # 推送标签到 GitHub（不会自动随 push branch 推送）
@@ -349,6 +360,7 @@ git push origin v1.0.0   # 推送标签到 GitHub（不会自动随 push branch 
 
 Qt 应用不能直接分发单个 `.exe`，用户机器上通常没有 Qt 运行时。
 `windeployqt` 是 Qt 提供的工具，用于：
+
 1. 扫描 `MeetingApp.exe` 的依赖
 2. 把所需的 Qt DLL（`Qt6Core.dll`、`Qt6Quick.dll` 等）复制到同目录
 3. 扫描 QML 导入，复制对应的 QML 模块到 `qml/` 子目录
@@ -358,6 +370,7 @@ windeployqt --qmldir resources/qml MeetingApp.exe
 ```
 
 执行后目录结构类似：
+
 ```
 deploy/
 ├── MeetingApp.exe
@@ -380,10 +393,12 @@ deploy/
 ```
 
 这个 Action 会：
+
 1. 在 GitHub 仓库创建一个 Release 页面（类似 GitHub 的"发布"功能手动操作）
 2. 将打包好的 zip 文件作为下载附件上传
 
 `prerelease: ${{ contains(github.ref_name, '-') }}` 的含义：
+
 - `v1.0.0` → 正式版（prerelease = false）
 - `v1.0.0-beta` / `v1.0.0-rc1` → 预发布版（prerelease = true）
 
