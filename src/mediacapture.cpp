@@ -18,22 +18,27 @@
 VideoFrameHandler::VideoFrameHandler(QObject *parent) : QObject(parent) {}
 
 void VideoFrameHandler::setVideoSource(
-    std::shared_ptr<livekit::VideoSource> source) {
+    std::shared_ptr<livekit::VideoSource> source)
+{
   m_videoSource = source;
   qDebug() << "[VideoFrameHandler] VideoSource 已设置";
 }
 
-void VideoFrameHandler::setEnabled(bool enabled) {
+void VideoFrameHandler::setEnabled(bool enabled)
+{
   m_enabled = enabled;
   qDebug() << "[VideoFrameHandler] 已" << (enabled ? "启用" : "禁用");
 }
 
-void VideoFrameHandler::handleVideoFrame(const QVideoFrame &frame) {
-  if (!m_enabled || !m_videoSource) {
+void VideoFrameHandler::handleVideoFrame(const QVideoFrame &frame)
+{
+  if (!m_enabled || !m_videoSource)
+  {
     return;
   }
 
-  if (!frame.isValid()) {
+  if (!frame.isValid())
+  {
     return;
   }
 
@@ -51,7 +56,8 @@ void VideoFrameHandler::handleVideoFrame(const QVideoFrame &frame) {
 
   // 将帧映射为可读模式
   QVideoFrame mappedFrame = frame;
-  if (!mappedFrame.map(QVideoFrame::ReadOnly)) {
+  if (!mappedFrame.map(QVideoFrame::ReadOnly))
+  {
     qWarning() << "[VideoFrameHandler] 无法映射视频帧";
     return;
   }
@@ -62,7 +68,8 @@ void VideoFrameHandler::handleVideoFrame(const QVideoFrame &frame) {
   QVideoFrameFormat::PixelFormat format = mappedFrame.pixelFormat();
 
   // 每100帧打印一次调试信息
-  if (++m_frameCount % 100 == 0) {
+  if (++m_frameCount % 100 == 0)
+  {
     qDebug() << "[VideoFrameHandler] 处理视频帧 #" << m_frameCount
              << "尺寸:" << width << "x" << height << "格式:" << format;
   }
@@ -72,24 +79,30 @@ void VideoFrameHandler::handleVideoFrame(const QVideoFrame &frame) {
   if (format == QVideoFrameFormat::Format_BGRA8888 ||
       format == QVideoFrameFormat::Format_ARGB8888 ||
       format == QVideoFrameFormat::Format_BGRX8888 ||
-      format == QVideoFrameFormat::Format_RGBX8888) {
+      format == QVideoFrameFormat::Format_RGBX8888)
+  {
     // 这些格式的内存布局与 BGRA 兼容（在 Windows 小端系统上）
     // 可以直接从映射内存中复制数据到 LiveKit 帧
     const uint8_t *srcData = mappedFrame.bits(0);
     int srcBytesPerLine = mappedFrame.bytesPerLine(0);
     size_t expectedBytesPerLine = width * 4;
 
-    if (srcData && srcBytesPerLine >= static_cast<int>(expectedBytesPerLine)) {
+    if (srcData && srcBytesPerLine >= static_cast<int>(expectedBytesPerLine))
+    {
       livekit::VideoFrame lkFrame = livekit::VideoFrame::create(
           width, height, livekit::VideoBufferType::BGRA);
 
       uint8_t *dstData = lkFrame.data();
 
       // 如果行对齐的，单次 memcpy
-      if (static_cast<size_t>(srcBytesPerLine) == expectedBytesPerLine) {
+      if (static_cast<size_t>(srcBytesPerLine) == expectedBytesPerLine)
+      {
         std::memcpy(dstData, srcData, expectedBytesPerLine * height);
-      } else {
-        for (int y = 0; y < height; ++y) {
+      }
+      else
+      {
+        for (int y = 0; y < height; ++y)
+        {
           std::memcpy(dstData + y * expectedBytesPerLine,
                       srcData + y * srcBytesPerLine, expectedBytesPerLine);
         }
@@ -99,10 +112,14 @@ void VideoFrameHandler::handleVideoFrame(const QVideoFrame &frame) {
                               now.time_since_epoch())
                               .count();
 
-      try {
+      try
+      {
         m_videoSource->captureFrame(lkFrame, timestamp_us);
-      } catch (const std::exception &e) {
-        if (m_frameCount % 100 == 0) {
+      }
+      catch (const std::exception &e)
+      {
+        if (m_frameCount % 100 == 0)
+        {
           qWarning() << "[VideoFrameHandler] 捕获帧异常:" << e.what();
         }
       }
@@ -111,9 +128,11 @@ void VideoFrameHandler::handleVideoFrame(const QVideoFrame &frame) {
   }
 
   // 【回退路径】如果无法直接复制，使用 toImage 转换（原始方法）
-  if (!directCopy) {
+  if (!directCopy)
+  {
     QImage image = mappedFrame.toImage();
-    if (!image.isNull()) {
+    if (!image.isNull())
+    {
       QImage argbImage = image.convertToFormat(QImage::Format_ARGB32);
 
       int frameWidth = argbImage.width();
@@ -132,10 +151,14 @@ void VideoFrameHandler::handleVideoFrame(const QVideoFrame &frame) {
                               now.time_since_epoch())
                               .count();
 
-      try {
+      try
+      {
         m_videoSource->captureFrame(lkFrame, timestamp_us);
-      } catch (const std::exception &e) {
-        if (m_frameCount % 100 == 0) {
+      }
+      catch (const std::exception &e)
+      {
+        if (m_frameCount % 100 == 0)
+        {
           qWarning() << "[VideoFrameHandler] 捕获帧异常:" << e.what();
         }
       }
@@ -153,7 +176,8 @@ void VideoFrameHandler::handleVideoFrame(const QVideoFrame &frame) {
 AudioFrameHandler::AudioFrameHandler(int sampleRate, int channels,
                                      QObject *parent)
     : QIODevice(parent), m_sampleRate(sampleRate), m_numChannels(channels),
-      m_samplesPerFrame10ms(sampleRate / 100) {
+      m_samplesPerFrame10ms(sampleRate / 100)
+{
   open(QIODevice::WriteOnly);
   // 预分配缓冲区容量（10ms × channels × 2帧余量）
   m_frameBuffer.reserve(m_samplesPerFrame10ms * channels * 2);
@@ -162,26 +186,31 @@ AudioFrameHandler::AudioFrameHandler(int sampleRate, int channels,
 }
 
 void AudioFrameHandler::setAudioSource(
-    std::shared_ptr<livekit::AudioSource> source) {
+    std::shared_ptr<livekit::AudioSource> source)
+{
   m_audioSource = source;
   qDebug() << "[AudioFrameHandler] AudioSource 已设置";
 }
 
-void AudioFrameHandler::setEnabled(bool enabled) {
+void AudioFrameHandler::setEnabled(bool enabled)
+{
   m_enabled = enabled;
   qDebug() << "[AudioFrameHandler] 已" << (enabled ? "启用" : "禁用");
 }
 
-qint64 AudioFrameHandler::readData(char *data, qint64 maxlen) {
+qint64 AudioFrameHandler::readData(char *data, qint64 maxlen)
+{
   Q_UNUSED(data);
   Q_UNUSED(maxlen);
   return 0; // 不支持读取
 }
 
-qint64 AudioFrameHandler::writeData(const char *data, qint64 len) {
+qint64 AudioFrameHandler::writeData(const char *data, qint64 len)
+{
   // 【关键修复原理：优雅退出】
   // 检查停止标志，主线程在销毁资源前会设置 m_stopping=true
-  if (!m_enabled || !m_audioSource || m_stopping.load() || len <= 0) {
+  if (!m_enabled || !m_audioSource || m_stopping.load() || len <= 0)
+  {
     return len; // 静默丢弃
   }
 
@@ -191,7 +220,8 @@ qint64 AudioFrameHandler::writeData(const char *data, qint64 len) {
 
   // 假设使用 16-bit PCM
   int totalSamples = static_cast<int>(len / sizeof(std::int16_t));
-  if (totalSamples <= 0) {
+  if (totalSamples <= 0)
+  {
     return len;
   }
 
@@ -205,12 +235,14 @@ qint64 AudioFrameHandler::writeData(const char *data, qint64 len) {
   return len;
 }
 
-void AudioFrameHandler::processAndSendFrames() {
+void AudioFrameHandler::processAndSendFrames()
+{
   // 每帧总采样数 = 每声道采样数 × 声道数
   const int frameTotalSamples = m_samplesPerFrame10ms * m_numChannels;
 
   // 循环处理所有完整的 10ms 帧
-  while (static_cast<int>(m_frameBuffer.size()) >= frameTotalSamples) {
+  while (static_cast<int>(m_frameBuffer.size()) >= frameTotalSamples)
+  {
     // 提取一帧
     std::vector<std::int16_t> frameData(
         m_frameBuffer.begin(), m_frameBuffer.begin() + frameTotalSamples);
@@ -222,20 +254,28 @@ void AudioFrameHandler::processAndSendFrames() {
                                    m_numChannels, m_samplesPerFrame10ms);
 
     // 【关键】通过 APM 处理音频（降噪、回声消除、AGC、高通滤波）
-    if (m_apm) {
-      try {
+    if (m_apm)
+    {
+      try
+      {
         m_apm->processStream(audioFrame);
-      } catch (const std::exception &e) {
+      }
+      catch (const std::exception &e)
+      {
         // 忽略 APM 处理失败，仍然发送原始音频
       }
     }
 
     // 【关键修复】同步发送，queue_size_ms=0 时立即返回，不会阻塞
-    try {
-      if (m_audioSource && !m_stopping.load()) {
+    try
+    {
+      if (m_audioSource && !m_stopping.load())
+      {
         m_audioSource->captureFrame(audioFrame);
       }
-    } catch (const std::exception &e) {
+    }
+    catch (const std::exception &e)
+    {
       // 静默忽略，避免日志洪泛
     }
   }
@@ -249,7 +289,8 @@ MediaCapture::MediaCapture(QObject *parent)
     : QObject(parent),
       m_captureSession(std::make_unique<QMediaCaptureSession>()),
       m_internalVideoSink(std::make_unique<QVideoSink>()),
-      m_videoHandler(std::make_unique<VideoFrameHandler>(this)) {
+      m_videoHandler(std::make_unique<VideoFrameHandler>(this))
+{
   qDebug() << "[MediaCapture] 初始化中...";
 
   // 刷新设备列表
@@ -265,17 +306,20 @@ MediaCapture::MediaCapture(QObject *parent)
   qDebug() << "[MediaCapture] 初始化完成";
 }
 
-MediaCapture::~MediaCapture() {
+MediaCapture::~MediaCapture()
+{
   stopCamera();
   stopMicrophone();
   qDebug() << "[MediaCapture] 已销毁";
 }
 
-void MediaCapture::refreshDevices() {
+void MediaCapture::refreshDevices()
+{
   // 获取摄像头列表
   m_cameraDevices = QMediaDevices::videoInputs();
   qDebug() << "[MediaCapture] 发现" << m_cameraDevices.count() << "个摄像头:";
-  for (const auto &cam : m_cameraDevices) {
+  for (const auto &cam : m_cameraDevices)
+  {
     qDebug() << "  -" << cam.description();
   }
 
@@ -283,7 +327,8 @@ void MediaCapture::refreshDevices() {
   m_microphoneDevices = QMediaDevices::audioInputs();
   qDebug() << "[MediaCapture] 发现" << m_microphoneDevices.count()
            << "个麦克风:";
-  for (const auto &mic : m_microphoneDevices) {
+  for (const auto &mic : m_microphoneDevices)
+  {
     qDebug() << "  -" << mic.description();
   }
 
@@ -291,7 +336,8 @@ void MediaCapture::refreshDevices() {
   emit availableMicrophonesChanged();
 }
 
-void MediaCapture::createLiveKitSources() {
+void MediaCapture::createLiveKitSources()
+{
   qDebug() << "[MediaCapture] 创建 LiveKit 源...";
 
   // 创建视频源 - 构造函数接受 (width, height)
@@ -308,12 +354,15 @@ void MediaCapture::createLiveKitSources() {
   apmOpts.noise_suppression = true;
   apmOpts.auto_gain_control = true;
   apmOpts.high_pass_filter = true;
-  try {
+  try
+  {
     m_apm = std::make_unique<livekit::AudioProcessingModule>(apmOpts);
     qDebug() << "[MediaCapture] APM 创建成功 (回声消除+降噪+AGC+高通滤波)";
     // 共享 APM 给 RemoteAudioPlayer，用于回声消除参考信号
     RemoteAudioPlayer::setSharedAPM(m_apm.get());
-  } catch (const std::exception &e) {
+  }
+  catch (const std::exception &e)
+  {
     qWarning() << "[MediaCapture] APM 创建失败:" << e.what();
     m_apm.reset();
   }
@@ -325,7 +374,8 @@ void MediaCapture::createLiveKitSources() {
   m_audioHandler = std::make_unique<AudioFrameHandler>(AUDIO_SAMPLE_RATE,
                                                        AUDIO_CHANNELS, this);
   m_audioHandler->setAudioSource(m_lkAudioSource);
-  if (m_apm) {
+  if (m_apm)
+  {
     m_audioHandler->setAPM(m_apm.get());
   }
   // 转发原始 PCM 数据信号（供 AI 语音转录）
@@ -351,12 +401,14 @@ bool MediaCapture::isMicrophoneActive() const { return m_microphoneActive; }
 
 QVideoSink *MediaCapture::videoSink() const { return m_externalVideoSink; }
 
-void MediaCapture::setVideoSink(QVideoSink *sink) {
+void MediaCapture::setVideoSink(QVideoSink *sink)
+{
   qDebug() << "[MediaCapture] setVideoSink 被调用, sink=" << sink
            << "当前 m_externalVideoSink=" << m_externalVideoSink
            << "cameraActive=" << m_cameraActive;
 
-  if (m_externalVideoSink != sink) {
+  if (m_externalVideoSink != sink)
+  {
     m_externalVideoSink = sink;
     // 注意：不设置 m_captureSession->setVideoSink(sink)
     // 因为 captureSession 已经连接到内部的 m_internalVideoSink
@@ -367,17 +419,21 @@ void MediaCapture::setVideoSink(QVideoSink *sink) {
   }
 }
 
-QStringList MediaCapture::availableCameras() const {
+QStringList MediaCapture::availableCameras() const
+{
   QStringList list;
-  for (const auto &cam : m_cameraDevices) {
+  for (const auto &cam : m_cameraDevices)
+  {
     list.append(cam.description());
   }
   return list;
 }
 
-QStringList MediaCapture::availableMicrophones() const {
+QStringList MediaCapture::availableMicrophones() const
+{
   QStringList list;
-  for (const auto &mic : m_microphoneDevices) {
+  for (const auto &mic : m_microphoneDevices)
+  {
     list.append(mic.description());
   }
   return list;
@@ -385,13 +441,16 @@ QStringList MediaCapture::availableMicrophones() const {
 
 int MediaCapture::currentCameraIndex() const { return m_currentCameraIndex; }
 
-void MediaCapture::setCurrentCameraIndex(int index) {
+void MediaCapture::setCurrentCameraIndex(int index)
+{
   if (index >= 0 && index < m_cameraDevices.count() &&
-      m_currentCameraIndex != index) {
+      m_currentCameraIndex != index)
+  {
     m_currentCameraIndex = index;
 
     // 如果摄像头正在运行，重新启动使用新设备
-    if (m_cameraActive) {
+    if (m_cameraActive)
+    {
       stopCamera();
       startCamera();
     }
@@ -400,17 +459,21 @@ void MediaCapture::setCurrentCameraIndex(int index) {
   }
 }
 
-int MediaCapture::currentMicrophoneIndex() const {
+int MediaCapture::currentMicrophoneIndex() const
+{
   return m_currentMicrophoneIndex;
 }
 
-void MediaCapture::setCurrentMicrophoneIndex(int index) {
+void MediaCapture::setCurrentMicrophoneIndex(int index)
+{
   if (index >= 0 && index < m_microphoneDevices.count() &&
-      m_currentMicrophoneIndex != index) {
+      m_currentMicrophoneIndex != index)
+  {
     m_currentMicrophoneIndex = index;
 
     // 如果麦克风正在运行，重新启动使用新设备
-    if (m_microphoneActive) {
+    if (m_microphoneActive)
+    {
       stopMicrophone();
       startMicrophone();
     }
@@ -423,11 +486,13 @@ void MediaCapture::setCurrentMicrophoneIndex(int index) {
 // 获取 LiveKit 轨道
 // =============================================================================
 
-std::shared_ptr<livekit::LocalVideoTrack> MediaCapture::getVideoTrack() {
+std::shared_ptr<livekit::LocalVideoTrack> MediaCapture::getVideoTrack()
+{
   return m_lkVideoTrack;
 }
 
-std::shared_ptr<livekit::LocalAudioTrack> MediaCapture::getAudioTrack() {
+std::shared_ptr<livekit::LocalAudioTrack> MediaCapture::getAudioTrack()
+{
   return m_lkAudioTrack;
 }
 
@@ -435,33 +500,40 @@ std::shared_ptr<livekit::LocalAudioTrack> MediaCapture::getAudioTrack() {
 // 重建 LiveKit 轨道（离开房间后调用）
 // =============================================================================
 
-void MediaCapture::recreateVideoTrack() {
-  if (m_lkVideoSource) {
+void MediaCapture::recreateVideoTrack()
+{
+  if (m_lkVideoSource)
+  {
     m_lkVideoTrack = livekit::LocalVideoTrack::createLocalVideoTrack(
         "camera", m_lkVideoSource);
     qDebug() << "[MediaCapture] 视频轨道已重建";
   }
 }
 
-void MediaCapture::recreateAudioTrack() {
-  if (m_lkAudioSource) {
+void MediaCapture::recreateAudioTrack()
+{
+  if (m_lkAudioSource)
+  {
     m_lkAudioTrack = livekit::LocalAudioTrack::createLocalAudioTrack(
         "microphone", m_lkAudioSource);
     qDebug() << "[MediaCapture] 音频轨道已重建";
   }
 }
 
-void MediaCapture::resetLiveKitSources() {
+void MediaCapture::resetLiveKitSources()
+{
   qDebug() << "[MediaCapture] 重置所有 LiveKit 源和轨道...";
 
   // 【关键修复原理：优雅退出 - 第二步】
   // 亮红灯：通知所有正在运行的后台线程立即停止。
   // 设置原子标志位，确保多线程可见性。
-  if (m_audioHandler) {
+  if (m_audioHandler)
+  {
     m_audioHandler->setStopping(true);
     m_audioHandler->setEnabled(false);
   }
-  if (m_videoHandler) {
+  if (m_videoHandler)
+  {
     m_videoHandler->setEnabled(false);
   }
 
@@ -488,7 +560,8 @@ void MediaCapture::resetLiveKitSources() {
   m_audioHandler = std::make_unique<AudioFrameHandler>(AUDIO_SAMPLE_RATE,
                                                        AUDIO_CHANNELS, this);
   m_audioHandler->setAudioSource(m_lkAudioSource);
-  if (m_apm) {
+  if (m_apm)
+  {
     m_audioHandler->setAPM(m_apm.get());
   }
   // 【关键】重置停止标志，允许新的后台线程工作
@@ -510,23 +583,27 @@ void MediaCapture::resetLiveKitSources() {
 // 摄像头控制
 // =============================================================================
 
-void MediaCapture::startCamera() {
+void MediaCapture::startCamera()
+{
   qDebug() << "[MediaCapture] startCamera 被调用, cameraActive="
            << m_cameraActive;
 
-  if (m_cameraActive) {
+  if (m_cameraActive)
+  {
     qDebug() << "[MediaCapture] 摄像头已在运行";
     return;
   }
 
-  if (m_cameraDevices.isEmpty()) {
+  if (m_cameraDevices.isEmpty())
+  {
     qWarning() << "[MediaCapture] 没有可用的摄像头";
     emit cameraError("没有可用的摄像头");
     return;
   }
 
   // 确保旧的摄像头资源已清理
-  if (m_camera) {
+  if (m_camera)
+  {
     qDebug() << "[MediaCapture] 清理旧的摄像头对象...";
     m_captureSession->setCamera(nullptr);
     m_camera.reset();
@@ -534,12 +611,55 @@ void MediaCapture::startCamera() {
 
   qDebug() << "[MediaCapture] 启动摄像头...";
 
-  try {
+  try
+  {
     // 创建摄像头
     QCameraDevice device = m_cameraDevices.at(m_currentCameraIndex);
     qDebug() << "[MediaCapture] 使用摄像头:" << device.description();
 
     m_camera = std::make_unique<QCamera>(device);
+
+    // 【优化】设置摄像头分辨率约束，确保以最佳 480p 格式采集
+    QCameraFormat bestFormat;
+    int bestScore = -1;
+    for (const auto &fmt : device.videoFormats())
+    {
+      QSize res = fmt.resolution();
+      // 优先精确匹配 640x480，帧率 >= 25fps
+      if (res.width() == 640 && res.height() == 480 &&
+          fmt.maxFrameRate() >= 25.0)
+      {
+        bestFormat = fmt;
+        bestScore = 1000; // 精确匹配最高优先级
+        break;
+      }
+      // 次优：选择最接近 640x480 且帧率 >= 20fps 的格式
+      if (fmt.maxFrameRate() >= 20.0)
+      {
+        int score = 0;
+        // 像素数越接近 640*480 = 307200 越好
+        int pixels = res.width() * res.height();
+        int diff = std::abs(pixels - 307200);
+        score = 500000 - diff; // 差距越小分数越高
+        if (score > bestScore)
+        {
+          bestScore = score;
+          bestFormat = fmt;
+        }
+      }
+    }
+    if (!bestFormat.isNull())
+    {
+      m_camera->setCameraFormat(bestFormat);
+      qDebug() << "[MediaCapture] 摄像头格式已设置:"
+               << bestFormat.resolution().width() << "x"
+               << bestFormat.resolution().height()
+               << "@" << bestFormat.maxFrameRate() << "fps";
+    }
+    else
+    {
+      qWarning() << "[MediaCapture] 未找到合适的摄像头格式，使用默认值";
+    }
 
     // 连接信号
     connect(m_camera.get(), &QCamera::activeChanged, this,
@@ -561,14 +681,18 @@ void MediaCapture::startCamera() {
     m_videoHandler->setEnabled(true);
 
     qDebug() << "[MediaCapture] 摄像头启动命令已发送";
-  } catch (const std::exception &e) {
+  }
+  catch (const std::exception &e)
+  {
     qCritical() << "[MediaCapture] 启动摄像头异常:" << e.what();
     emit cameraError(QString("启动摄像头失败: %1").arg(e.what()));
   }
 }
 
-void MediaCapture::stopCamera() {
-  if (!m_cameraActive && !m_camera) {
+void MediaCapture::stopCamera()
+{
+  if (!m_cameraActive && !m_camera)
+  {
     return;
   }
 
@@ -577,7 +701,8 @@ void MediaCapture::stopCamera() {
   // 禁用视频帧处理
   m_videoHandler->setEnabled(false);
 
-  if (m_camera) {
+  if (m_camera)
+  {
     m_camera->stop();
     m_captureSession->setCamera(nullptr);
     m_camera.reset();
@@ -593,10 +718,14 @@ void MediaCapture::stopCamera() {
   qDebug() << "[MediaCapture] 摄像头已停止";
 }
 
-void MediaCapture::toggleCamera() {
-  if (m_cameraActive) {
+void MediaCapture::toggleCamera()
+{
+  if (m_cameraActive)
+  {
     stopCamera();
-  } else {
+  }
+  else
+  {
     startCamera();
   }
 }
@@ -605,13 +734,16 @@ void MediaCapture::toggleCamera() {
 // 麦克风控制
 // =============================================================================
 
-void MediaCapture::startMicrophone() {
-  if (m_microphoneActive) {
+void MediaCapture::startMicrophone()
+{
+  if (m_microphoneActive)
+  {
     qDebug() << "[MediaCapture] 麦克风已在运行";
     return;
   }
 
-  if (m_microphoneDevices.isEmpty()) {
+  if (m_microphoneDevices.isEmpty())
+  {
     qWarning() << "[MediaCapture] 没有可用的麦克风";
     emit microphoneError("没有可用的麦克风");
     return;
@@ -630,7 +762,8 @@ void MediaCapture::startMicrophone() {
 
   // 检查设备是否支持该格式
   bool formatChanged = false;
-  if (!device.isFormatSupported(format)) {
+  if (!device.isFormatSupported(format))
+  {
     qWarning() << "[MediaCapture] 设备不支持请求的音频格式，使用默认格式";
     format = device.preferredFormat();
     // 确保采样格式仍然是 Int16
@@ -644,7 +777,8 @@ void MediaCapture::startMicrophone() {
   int actualChannels = format.channelCount();
 
   if (formatChanged || actualSampleRate != AUDIO_SAMPLE_RATE ||
-      actualChannels != AUDIO_CHANNELS) {
+      actualChannels != AUDIO_CHANNELS)
+  {
     qDebug() << "[MediaCapture] 音频格式与配置不同，重新创建 AudioSource";
     qDebug() << "[MediaCapture] 实际格式: 采样率=" << actualSampleRate
              << "声道=" << actualChannels;
@@ -657,7 +791,8 @@ void MediaCapture::startMicrophone() {
     m_audioHandler = std::make_unique<AudioFrameHandler>(actualSampleRate,
                                                          actualChannels, this);
     m_audioHandler->setAudioSource(m_lkAudioSource);
-    if (m_apm) {
+    if (m_apm)
+    {
       m_audioHandler->setAPM(m_apm.get());
     }
     // 转发原始 PCM 数据信号（供 AI 语音转录）
@@ -686,8 +821,10 @@ void MediaCapture::startMicrophone() {
            << "声道:" << format.channelCount();
 }
 
-void MediaCapture::stopMicrophone() {
-  if (!m_microphoneActive) {
+void MediaCapture::stopMicrophone()
+{
+  if (!m_microphoneActive)
+  {
     return;
   }
 
@@ -695,7 +832,8 @@ void MediaCapture::stopMicrophone() {
 
   m_audioHandler->setEnabled(false);
 
-  if (m_audioInput) {
+  if (m_audioInput)
+  {
     m_audioInput->stop();
     m_audioInput.reset();
   }
@@ -706,10 +844,14 @@ void MediaCapture::stopMicrophone() {
   qDebug() << "[MediaCapture] 麦克风已停止";
 }
 
-void MediaCapture::toggleMicrophone() {
-  if (m_microphoneActive) {
+void MediaCapture::toggleMicrophone()
+{
+  if (m_microphoneActive)
+  {
     stopMicrophone();
-  } else {
+  }
+  else
+  {
     startMicrophone();
   }
 }
@@ -718,19 +860,22 @@ void MediaCapture::toggleMicrophone() {
 // 内部槽函数
 // =============================================================================
 
-void MediaCapture::onCameraActiveChanged(bool active) {
+void MediaCapture::onCameraActiveChanged(bool active)
+{
   qDebug() << "[MediaCapture] 摄像头活动状态变化:" << active;
   m_cameraActive = active;
   emit cameraActiveChanged();
 }
 
 void MediaCapture::onCameraErrorOccurred(QCamera::Error error,
-                                         const QString &errorString) {
+                                         const QString &errorString)
+{
   qWarning() << "[MediaCapture] 摄像头错误:" << error << errorString;
   emit cameraError(errorString);
 }
 
-void MediaCapture::onVideoFrameReceived(const QVideoFrame &frame) {
+void MediaCapture::onVideoFrameReceived(const QVideoFrame &frame)
+{
   // 转发到处理器（处理器会推送到 LiveKit）
   m_videoHandler->handleVideoFrame(frame);
 
@@ -740,12 +885,14 @@ void MediaCapture::onVideoFrameReceived(const QVideoFrame &frame) {
   QVideoSink *externalSink = m_externalVideoSink.data();
 
   // 如果有外部 sink，也发送帧
-  if (externalSink && externalSink != m_internalVideoSink.get()) {
+  if (externalSink && externalSink != m_internalVideoSink.get())
+  {
     externalSink->setVideoFrame(frame);
 
     // 每100帧打印一次调试信息
     static int frameCount = 0;
-    if (++frameCount % 100 == 0) {
+    if (++frameCount % 100 == 0)
+    {
       qDebug() << "[MediaCapture] 已发送" << frameCount << "帧到外部 VideoSink";
     }
   }
