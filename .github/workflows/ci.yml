@@ -1,0 +1,69 @@
+# =============================================================================
+# GitHub Actions CI - MeetingApp
+# 自动构建 + LiveKit SDK 动态拉取
+# =============================================================================
+name: CI Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# 同一分支只保留最新的 CI 运行
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ===================== Windows (MSVC) =====================
+  build-windows:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        build_type: [Release]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install Qt 6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.7.2'
+          arch: 'win64_msvc2019_64'
+          modules: 'qtmultimedia qtwebsockets'
+          cache: true
+
+      - name: Cache LiveKit SDK
+        uses: actions/cache@v4
+        with:
+          path: third_party
+          key: livekit-sdk-windows-x64-${{ hashFiles('cmake/FetchLiveKit.cmake') }}
+          restore-keys: |
+            livekit-sdk-windows-x64-
+
+      - name: Configure CMake
+        run: >
+          cmake -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DCMAKE_C_COMPILER=cl
+          -DCMAKE_CXX_COMPILER=cl
+
+      - name: Build
+        run: cmake --build build --config ${{ matrix.build_type }} -j $env:NUMBER_OF_PROCESSORS
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: MeetingApp-windows-x64-${{ matrix.build_type }}
+          path: |
+            build/MeetingApp.exe
+            build/*.dll
+          retention-days: 7

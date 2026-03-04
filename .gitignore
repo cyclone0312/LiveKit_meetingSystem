@@ -58,6 +58,7 @@ ehthumbs.db
 
 # ==================== 第三方依赖 ====================
 # LiveKit SDK（由 cmake/FetchLiveKit.cmake 自动管理）
+third_party/
 extend/livekit-sdk-windows/
 extend/.cache/
 
