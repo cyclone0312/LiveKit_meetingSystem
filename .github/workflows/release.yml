@@ -1,0 +1,105 @@
+# =============================================================================
+# GitHub Actions Release - MeetingApp
+# 当推送 v* Tag 时，自动构建 Windows Release 并发布到 GitHub Releases
+# =============================================================================
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  # ===================== Windows Release Build =====================
+  release-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $ver = $tag -replace '^v', ''
+          echo "TAG=$tag" >> $env:GITHUB_OUTPUT
+          echo "VERSION=$ver" >> $env:GITHUB_OUTPUT
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install Qt 6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.3"
+          arch: "win64_msvc2022_64"
+          modules: "qtmultimedia qtwebsockets"
+          cache: true
+
+      - name: Cache LiveKit SDK
+        uses: actions/cache@v4
+        with:
+          path: third_party
+          key: livekit-sdk-windows-x64-${{ hashFiles('cmake/FetchLiveKit.cmake') }}
+          restore-keys: |
+            livekit-sdk-windows-x64-
+
+      - name: Configure CMake
+        run: >
+          cmake -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_C_COMPILER=cl
+          -DCMAKE_CXX_COMPILER=cl
+
+      - name: Build
+        run: cmake --build build --config Release -j $env:NUMBER_OF_PROCESSORS
+
+      - name: Run windeployqt
+        shell: pwsh
+        run: |
+          # 收集 Qt 运行时依赖
+          $deployDir = "build/deploy"
+          New-Item -ItemType Directory -Force -Path $deployDir | Out-Null
+          Copy-Item "build/MeetingApp.exe" $deployDir
+          Copy-Item "build/*.dll" $deployDir -ErrorAction SilentlyContinue
+          & windeployqt --qmldir resources/qml --no-translations --no-system-d3d-compiler --no-opengl-sw "$deployDir/MeetingApp.exe"
+
+      - name: Package Release
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.VERSION }}"
+          $zipName = "MeetingApp-windows-x64-v${version}.zip"
+          Compress-Archive -Path "build/deploy/*" -DestinationPath "build/$zipName"
+          echo "ASSET_NAME=$zipName" >> $env:GITHUB_OUTPUT
+          echo "ASSET_PATH=build/$zipName" >> $env:GITHUB_OUTPUT
+        id: package
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "MeetingApp ${{ steps.version.outputs.TAG }}"
+          body: |
+            ## MeetingApp ${{ steps.version.outputs.TAG }}
+
+            ### Downloads
+            - **Windows x64**: `${{ steps.package.outputs.ASSET_NAME }}`
+
+            ### What's included
+            - MeetingApp.exe + Qt runtime dependencies
+            - LiveKit SDK runtime libraries (livekit.dll, livekit_ffi.dll)
+
+            ### Requirements
+            - Windows 10/11 x64
+            - Visual C++ Redistributable 2022
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: |
+            ${{ steps.package.outputs.ASSET_PATH }}

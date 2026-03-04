@@ -1,6 +1,6 @@
 # =============================================================================
 # GitHub Actions CI - MeetingApp
-# 自动构建 + LiveKit SDK 动态拉取
+# 自动构建 + LiveKit SDK 动态拉取 (Windows / Linux / macOS)
 # =============================================================================
 name: CI Build
 
@@ -32,13 +32,12 @@ jobs:
         with:
           arch: x64
 
-
       - name: Install Qt 6
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.8.3'
-          arch: 'win64_msvc2022_64'
-          modules: 'qtmultimedia qtwebsockets'
+          version: "6.8.3"
+          arch: "win64_msvc2022_64"
+          modules: "qtmultimedia qtwebsockets"
           cache: true
 
       - name: Cache LiveKit SDK
@@ -67,4 +66,109 @@ jobs:
           path: |
             build/MeetingApp.exe
             build/*.dll
+          retention-days: 7
+
+  # ===================== Linux (GCC) =====================
+  build-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        build_type: [Release]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential ninja-build \
+            libgl1-mesa-dev libvulkan-dev \
+            libxkbcommon-dev libxkbcommon-x11-0 \
+            libxcb-xinerama0 libxcb-cursor0 \
+            libxcb-keysyms1 libxcb-shape0 libxcb-icccm4 \
+            libxcb-image0 libxcb-render-util0 \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            libpulse-dev libasound2-dev \
+            libxrandr-dev libxcb-randr0-dev
+
+      - name: Install Qt 6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.3"
+          modules: "qtmultimedia qtwebsockets"
+          cache: true
+
+      - name: Cache LiveKit SDK
+        uses: actions/cache@v4
+        with:
+          path: third_party
+          key: livekit-sdk-linux-x64-${{ hashFiles('cmake/FetchLiveKit.cmake') }}
+          restore-keys: |
+            livekit-sdk-linux-x64-
+
+      - name: Configure CMake
+        run: >
+          cmake -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+
+      - name: Build
+        run: cmake --build build --config ${{ matrix.build_type }} -j $(nproc)
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: MeetingApp-linux-x64-${{ matrix.build_type }}
+          path: |
+            build/MeetingApp
+            build/*.so*
+          retention-days: 7
+
+  # ===================== macOS (Clang) =====================
+  build-macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        build_type: [Release]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Ninja
+        run: brew install ninja
+
+      - name: Install Qt 6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.3"
+          modules: "qtmultimedia qtwebsockets"
+          cache: true
+
+      - name: Cache LiveKit SDK
+        uses: actions/cache@v4
+        with:
+          path: third_party
+          key: livekit-sdk-macos-x64-${{ hashFiles('cmake/FetchLiveKit.cmake') }}
+          restore-keys: |
+            livekit-sdk-macos-x64-
+
+      - name: Configure CMake
+        run: >
+          cmake -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+
+      - name: Build
+        run: cmake --build build --config ${{ matrix.build_type }} -j $(sysctl -n hw.logicalcpu)
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: MeetingApp-macos-x64-${{ matrix.build_type }}
+          path: |
+            build/MeetingApp
+            build/*.dylib
           retention-days: 7
