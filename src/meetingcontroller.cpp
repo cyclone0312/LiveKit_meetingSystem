@@ -3,6 +3,11 @@
 #include <QClipboard>
 #include <QDebug>
 #include <QGuiApplication>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QRandomGenerator>
 #include <QSettings>
 #include <QTimer>
@@ -234,7 +239,25 @@ void MeetingController::joinMeeting(const QString &meetingId,
 }
 
 void MeetingController::leaveMeeting() {
-  qDebug() << "[MeetingController] 离开会议";
+  qDebug() << "[MeetingController] 离开会议" << m_meetingId;
+
+  // 通知服务器更新会议时长
+  if (!m_meetingId.isEmpty() && m_liveKitManager) {
+    QUrl url(m_liveKitManager->tokenServerUrl() + "/api/meeting/leave");
+    QNetworkRequest request(url);
+    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    QJsonObject body;
+    body["username"] = m_userName;
+    body["roomName"] = m_meetingId;
+    auto *nam = new QNetworkAccessManager(this);
+    auto *reply =
+        nam->post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
+    connect(reply, &QNetworkReply::finished, this, [reply, nam]() {
+      qDebug() << "[MeetingController] 会议时长已更新";
+      reply->deleteLater();
+      nam->deleteLater();
+    });
+  }
 
   // 【重要】先重置媒体状态（在断开连接之前）
   // 这样可以避免在断开后尝试 unpublish 导致的问题
@@ -303,6 +326,12 @@ void MeetingController::copyMeetingInfo() {
   clipboard->setText(info);
 
   emit showMessage("会议信息已复制");
+}
+
+void MeetingController::copyToClipboard(const QString &text) {
+  QClipboard *clipboard = QGuiApplication::clipboard();
+  clipboard->setText(text);
+  emit showMessage("已复制到剪贴板");
 }
 
 void MeetingController::switchView(const QString &viewType) {

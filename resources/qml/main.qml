@@ -240,6 +240,10 @@ ApplicationWindow {
     SettingsDialog {
         id: settingsDialog
     }
+
+    ScheduleMeetingDialog {
+        id: scheduleMeetingDialog
+    }
     
     // 连接等待对话框
     ConnectionLoadingDialog {

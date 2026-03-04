@@ -10,6 +10,9 @@ Page {
     signal joinMeeting(string meetingId)
     signal createMeeting(string title)
     signal logout()
+
+    // 历史会议全量数据
+    ListModel { id: allMeetingsModel }
     
     // 连接 liveKitManager 会议历史信号
     Connections {
@@ -17,21 +20,33 @@ Page {
         
         function onMeetingHistoryReceived(history) {
             recentMeetingsModel.clear()
+            allMeetingsModel.clear()
+            var threeDaysAgo = new Date()
+            threeDaysAgo.setDate(threeDaysAgo.getDate() - 3)
+            threeDaysAgo.setHours(0, 0, 0, 0)
+
             for (var i = 0; i < history.length; i++) {
                 var meeting = history[i]
-                // 格式化时长
                 var durationStr = formatDuration(meeting.duration)
-                // 格式化时间
                 var timeStr = formatDateTime(meeting.startTime)
-                recentMeetingsModel.append({
+                var item = {
                     "historyId": meeting.id,
-                    "title": meeting.roomName,
+                    "title": meeting.meetingTitle || meeting.roomName,
                     "meetingId": meeting.roomName,
                     "time": timeStr,
                     "duration": durationStr
-                })
+                }
+
+                // 所有记录加到历史会议
+                allMeetingsModel.append(item)
+
+                // 最近3天的加到首页最近会议
+                var meetingDate = new Date(String(meeting.startTime).replace("T", " ").replace(/\.\d{3}Z$/, "").replace("Z", "").replace(/-/g, '/'))
+                if (meetingDate >= threeDaysAgo) {
+                    recentMeetingsModel.append(item)
+                }
             }
-            console.log("[HomePage] 加载了", history.length, "条会议记录")
+            console.log("[HomePage] 加载了", history.length, "条会议记录，最近3天:", recentMeetingsModel.count, "条")
         }
         
         function onMeetingHistoryFailed(error) {
@@ -43,6 +58,25 @@ Page {
     Component.onCompleted: {
         if (meetingController && meetingController.userName && meetingController.liveKitManager) {
             meetingController.liveKitManager.fetchMeetingHistory(meetingController.userName)
+        }
+    }
+
+    // 离开会议后自动刷新历史（延迟1.5秒等服务器更新时长）
+    Connections {
+        target: meetingController
+        function onMeetingLeft() {
+            refreshAfterLeaveTimer.start()
+        }
+    }
+
+    Timer {
+        id: refreshAfterLeaveTimer
+        interval: 1500
+        onTriggered: {
+            if (meetingController && meetingController.userName && meetingController.liveKitManager) {
+                meetingController.liveKitManager.fetchMeetingHistory(meetingController.userName)
+                console.log("[HomePage] 离开会议后自动刷新历史")
+            }
         }
     }
     
@@ -117,8 +151,11 @@ Page {
                     try {
                         var response = JSON.parse(xhr.responseText)
                         if (response.success) {
-                            recentMeetingsModel.remove(index)
                             console.log("[HomePage] 已删除会议记录 id=" + historyId)
+                            // 重新加载以保持两个 model 同步
+                            if (meetingController && meetingController.liveKitManager) {
+                                meetingController.liveKitManager.fetchMeetingHistory(username)
+                            }
                         }
                     } catch (e) {
                         console.log("[HomePage] 删除解析失败:", e)
@@ -129,6 +166,74 @@ Page {
             }
         }
         xhr.send(JSON.stringify({ id: historyId, username: username }))
+    }
+
+    // 加载预定会议列表
+    function loadScheduledMeetings() {
+        var username = meetingController ? meetingController.userName : ""
+        if (!username) return
+
+        var xhr = new XMLHttpRequest()
+        xhr.open("GET", getServerUrl() + "/api/schedule/list?username=" + encodeURIComponent(username))
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === XMLHttpRequest.DONE) {
+                if (xhr.status === 200) {
+                    try {
+                        var response = JSON.parse(xhr.responseText)
+                        if (response.success && response.meetings) {
+                            scheduledMeetingsModel.clear()
+                            for (var i = 0; i < response.meetings.length; i++) {
+                                var m = response.meetings[i]
+                                scheduledMeetingsModel.append({
+                                    "scheduleId": m.id,
+                                    "title": m.title,
+                                    "roomId": m.room_id,
+                                    // 修复时区：去掉 ISO 格式的 T 和 Z/.000Z 后缀，避免被当作 UTC 解析
+                                    "startTime": String(m.start_time).replace("T", " ").replace(/\.\d{3}Z$/, "").replace("Z", ""),
+                                    "durationMinutes": m.duration_minutes,
+                                    "muteOnJoin": m.mute_on_join === 1,
+                                    "autoRecord": m.auto_record === 1
+                                })
+                            }
+                            console.log("[HomePage] 加载了", response.meetings.length, "条预定会议")
+                        }
+                    } catch (e) {
+                        console.log("[HomePage] 解析预定会议数据失败:", e)
+                    }
+                } else {
+                    console.log("[HomePage] 获取预定会议失败:", xhr.status)
+                }
+            }
+        }
+        xhr.send()
+    }
+
+    // 取消预定会议
+    function cancelScheduledMeeting(scheduleId, index) {
+        var username = meetingController ? meetingController.userName : ""
+        if (!username) return
+
+        var xhr = new XMLHttpRequest()
+        xhr.open("POST", getServerUrl() + "/api/schedule/cancel")
+        xhr.setRequestHeader("Content-Type", "application/json")
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === XMLHttpRequest.DONE) {
+                if (xhr.status === 200) {
+                    try {
+                        var response = JSON.parse(xhr.responseText)
+                        if (response.success) {
+                            scheduledMeetingsModel.remove(index)
+                            console.log("[HomePage] 已取消预定会议 id=" + scheduleId)
+                        }
+                    } catch (e) {
+                        console.log("[HomePage] 取消解析失败:", e)
+                    }
+                } else {
+                    console.log("[HomePage] 取消预定会议失败:", xhr.status)
+                }
+            }
+        }
+        xhr.send(JSON.stringify({ id: scheduleId, username: username }))
     }
 
     // 会议已关闭弹窗
@@ -432,6 +537,12 @@ Page {
                                 currentPage = modelData.page;
                                 if (modelData.page === "recordings") {
                                     aiAssistant.loadLocalRecordings();
+                                } else if (modelData.page === "schedule") {
+                                    loadScheduledMeetings();
+                                } else if (modelData.page === "history") {
+                                    if (meetingController && meetingController.userName && meetingController.liveKitManager) {
+                                        meetingController.liveKitManager.fetchMeetingHistory(meetingController.userName)
+                                    }
                                 }
                             }
                         }
@@ -626,7 +737,7 @@ Page {
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: createMeetingDialog.open()
+                                onClicked: scheduleMeetingDialog.open()
                             }
                         }
                         
@@ -708,6 +819,24 @@ Page {
                             }
                             
                             Item { Layout.fillWidth: true }
+
+                            Text {
+                                text: "🔄"
+                                font.pixelSize: 16
+                                color: refreshRecentArea.containsMouse ? "#4DA6FF" : "#808090"
+
+                                MouseArea {
+                                    id: refreshRecentArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        if (meetingController && meetingController.userName && meetingController.liveKitManager) {
+                                            meetingController.liveKitManager.fetchMeetingHistory(meetingController.userName)
+                                        }
+                                    }
+                                }
+                            }
                             
                             Text {
                                 text: "查看全部"
@@ -717,6 +846,7 @@ Page {
                                 MouseArea {
                                     anchors.fill: parent
                                     cursorShape: Qt.PointingHandCursor
+                                    onClicked: currentPage = "history"
                                 }
                             }
                         }
@@ -803,7 +933,7 @@ Page {
                                         
                                         contentItem: Text {
                                             text: parent.text
-                                            font: parent.font
+                                            font.pixelSize: 12
                                             color: "white"
                                             horizontalAlignment: Text.AlignHCenter
                                             verticalAlignment: Text.AlignVCenter
@@ -826,6 +956,558 @@ Page {
                                         }
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ===== 会议日程页面 =====
+            ColumnLayout {
+                anchors.fill: parent
+                spacing: 16
+                visible: currentPage === "schedule"
+
+                // 标题栏
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 60
+                    radius: 16
+                    color: "#252542"
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 24
+                        anchors.rightMargin: 24
+                        spacing: 16
+
+                        Text {
+                            text: "📅 会议日程"
+                            font.pixelSize: 20
+                            font.bold: true
+                            color: "#FFFFFF"
+                        }
+
+                        Item { Layout.fillWidth: true }
+
+                        // 刷新按钮
+                        Button {
+                            implicitWidth: 80
+                            implicitHeight: 32
+                            text: "🔄 刷新"
+                            font.pixelSize: 12
+
+                            background: Rectangle {
+                                radius: 6
+                                color: parent.pressed ? "#2D2D4C" :
+                                       parent.hovered ? "#4D4D6C" : "#3D3D5C"
+                            }
+
+                            contentItem: Text {
+                                text: parent.text
+                                font: parent.font
+                                color: "white"
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
+
+                            onClicked: loadScheduledMeetings()
+                        }
+
+                        // 新建预定按钮
+                        Button {
+                            implicitWidth: 100
+                            implicitHeight: 32
+                            text: "+ 预定会议"
+                            font.pixelSize: 12
+
+                            background: Rectangle {
+                                radius: 6
+                                color: parent.pressed ? "#E65100" :
+                                       parent.hovered ? "#FF9800" : "#FF8F00"
+                            }
+
+                            contentItem: Text {
+                                text: parent.text
+                                font.pixelSize: 12
+                                font.bold: true
+                                color: "white"
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
+
+                            onClicked: scheduleMeetingDialog.open()
+                        }
+                    }
+                }
+
+                // 预定会议列表
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    radius: 16
+                    color: "#252542"
+
+                    ListView {
+                        id: scheduledMeetingsListView
+                        anchors.fill: parent
+                        anchors.margins: 16
+                        clip: true
+                        spacing: 12
+
+                        model: ListModel {
+                            id: scheduledMeetingsModel
+                        }
+
+                        // 空状态
+                        Text {
+                            anchors.centerIn: parent
+                            text: "暂无预定会议\n\n点击右上角「+ 预定会议」来安排新会议"
+                            font.pixelSize: 14
+                            color: "#808090"
+                            visible: parent.count === 0
+                            horizontalAlignment: Text.AlignHCenter
+                            lineHeight: 1.5
+                        }
+
+                        delegate: Rectangle {
+                            width: ListView.view.width
+                            height: 100
+                            radius: 12
+                            color: schedItemArea.containsMouse ? "#333355" : "#2D2D4A"
+                            border.width: 1
+                            border.color: {
+                                var now = new Date()
+                                var start = new Date(model.startTime.replace(/-/g, '/'))
+                                var endTime = new Date(start.getTime() + model.durationMinutes * 60000)
+                                if (now >= start && now <= endTime) return "#4CAF50"  // 进行中
+                                if (now > endTime) return "#FF6B6B"  // 已过期
+                                return "#3D3D5C"  // 未开始
+                            }
+
+                            Behavior on color { ColorAnimation { duration: 150 } }
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 20
+                                anchors.rightMargin: 20
+                                spacing: 16
+
+                                // 时间图标
+                                Rectangle {
+                                    width: 56
+                                    height: 56
+                                    radius: 12
+                                    color: {
+                                        var now = new Date()
+                                        var start = new Date(model.startTime.replace(/-/g, '/'))
+                                        var endTime = new Date(start.getTime() + model.durationMinutes * 60000)
+                                        if (now >= start && now <= endTime) return "#1B5E20"  // 进行中
+                                        if (now > endTime) return "#4A1A1A"  // 已过期
+                                        return "#1A3A5C"  // 未开始
+                                    }
+
+                                    ColumnLayout {
+                                        anchors.centerIn: parent
+                                        spacing: 0
+
+                                        Text {
+                                            Layout.alignment: Qt.AlignHCenter
+                                            text: {
+                                                var d = new Date(model.startTime.replace(/-/g, '/'))
+                                                return String(d.getMonth() + 1) + "月" + String(d.getDate()) + "日"
+                                            }
+                                            font.pixelSize: 10
+                                            color: "#B0B0C0"
+                                        }
+
+                                        Text {
+                                            Layout.alignment: Qt.AlignHCenter
+                                            text: {
+                                                var d = new Date(model.startTime.replace(/-/g, '/'))
+                                                return String(d.getHours()).padStart(2, '0') + ":" + String(d.getMinutes()).padStart(2, '0')
+                                            }
+                                            font.pixelSize: 16
+                                            font.bold: true
+                                            color: "#FFFFFF"
+                                        }
+                                    }
+                                }
+
+                                // 会议信息
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 6
+
+                                    RowLayout {
+                                        spacing: 8
+
+                                        Text {
+                                            text: model.title
+                                            font.pixelSize: 16
+                                            font.bold: true
+                                            color: "#FFFFFF"
+                                            elide: Text.ElideRight
+                                            Layout.fillWidth: true
+                                        }
+
+                                        // 状态标签
+                                        Rectangle {
+                                            width: statusLabel.implicitWidth + 16
+                                            height: 22
+                                            radius: 11
+                                            color: {
+                                                var now = new Date()
+                                                var start = new Date(model.startTime.replace(/-/g, '/'))
+                                                var endTime = new Date(start.getTime() + model.durationMinutes * 60000)
+                                                if (now >= start && now <= endTime) return "#1B5E20"  // 进行中
+                                                if (now > endTime) return "#4A1A1A"  // 已过期
+                                                return "#1A3A5C"  // 未开始
+                                            }
+
+                                            Text {
+                                                id: statusLabel
+                                                anchors.centerIn: parent
+                                                text: {
+                                                    var now = new Date()
+                                                    var start = new Date(model.startTime.replace(/-/g, '/'))
+                                                    var endTime = new Date(start.getTime() + model.durationMinutes * 60000)
+                                                    if (now >= start && now <= endTime) return "进行中"
+                                                    if (now > endTime) return "已结束"
+                                                    return "未开始"
+                                                }
+                                                font.pixelSize: 11
+                                                color: {
+                                                    var now = new Date()
+                                                    var start = new Date(model.startTime.replace(/-/g, '/'))
+                                                    var endTime = new Date(start.getTime() + model.durationMinutes * 60000)
+                                                    if (now >= start && now <= endTime) return "#4CAF50"
+                                                    if (now > endTime) return "#FF6B6B"
+                                                    return "#1E90FF"
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Text {
+                                        text: "会议号: " + model.roomId + "  |  时长: " + model.durationMinutes + "分钟"
+                                        font.pixelSize: 13
+                                        color: "#808090"
+                                    }
+                                }
+
+                                // 操作按钮
+                                RowLayout {
+                                    spacing: 8
+
+                                    // 加入/进入 按钮
+                                    Button {
+                                        implicitWidth: 80
+                                        implicitHeight: 34
+                                        text: {
+                                            var now = new Date()
+                                            var start = new Date(model.startTime.replace(/-/g, '/'))
+                                            if (now >= new Date(start.getTime() - 5 * 60000)) return "加入会议"
+                                            return "未到时间"
+                                        }
+                                        enabled: {
+                                            var now = new Date()
+                                            var start = new Date(model.startTime.replace(/-/g, '/'))
+                                            // 开始前5分钟可以加入
+                                            return now >= new Date(start.getTime() - 5 * 60000)
+                                        }
+                                        font.pixelSize: 12
+
+                                        background: Rectangle {
+                                            radius: 8
+                                            color: parent.enabled ? (parent.pressed ? "#1873CC" :
+                                                   parent.hovered ? "#4DA6FF" : "#1E90FF") : "#3D3D5C"
+                                        }
+
+                                        contentItem: Text {
+                                            text: parent.text
+                                            font: parent.font
+                                            color: parent.enabled ? "white" : "#606080"
+                                            horizontalAlignment: Text.AlignHCenter
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+
+                                        onClicked: joinMeeting(model.roomId)
+                                    }
+
+                                    // 分享按钮 — 复制会议信息到剪贴板
+                                    Button {
+                                        implicitWidth: 60
+                                        implicitHeight: 34
+                                        text: "分享"
+                                        font.pixelSize: 12
+
+                                        background: Rectangle {
+                                            radius: 8
+                                            color: parent.pressed ? "#1B5E20" :
+                                                   parent.hovered ? "#388E3C" : "#3D3D5C"
+                                        }
+
+                                        contentItem: Text {
+                                            text: parent.text
+                                            font.pixelSize: 12
+                                            color: parent.hovered ? "white" : "#B0B0C0"
+                                            horizontalAlignment: Text.AlignHCenter
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+
+                                        onClicked: {
+                                            var info = "📅 会议邀请\n"
+                                            info += "会议主题: " + model.title + "\n"
+                                            info += "会议号: " + model.roomId + "\n"
+                                            info += "开始时间: " + model.startTime + "\n"
+                                            info += "会议时长: " + model.durationMinutes + "分钟\n"
+                                            info += "加入方式: 打开视频会议APP → 加入会议 → 输入会议号 " + model.roomId
+                                            meetingController.copyToClipboard(info)
+                                            copiedTip.visible = true
+                                            copiedTimer.start()
+                                        }
+                                    }
+
+                                    // 取消按钮
+                                    Button {
+                                        implicitWidth: 60
+                                        implicitHeight: 34
+                                        text: "取消"
+                                        font.pixelSize: 12
+
+                                        background: Rectangle {
+                                            radius: 8
+                                            color: parent.pressed ? "#D32F2F" :
+                                                   parent.hovered ? "#EF5350" : "#3D3D5C"
+                                        }
+
+                                        contentItem: Text {
+                                            text: parent.text
+                                            font.pixelSize: 12
+                                            color: parent.hovered ? "white" : "#B0B0C0"
+                                            horizontalAlignment: Text.AlignHCenter
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+
+                                        onClicked: cancelScheduledMeeting(model.scheduleId, index)
+                                    }
+                                }
+                            }
+
+                            MouseArea {
+                                id: schedItemArea
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                acceptedButtons: Qt.NoButton
+                            }
+
+                            // 复制成功提示
+                            Rectangle {
+                                id: copiedTip
+                                visible: false
+                                anchors.bottom: parent.bottom
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                anchors.bottomMargin: 4
+                                width: tipText.implicitWidth + 20
+                                height: 24
+                                radius: 12
+                                color: "#4CAF50"
+
+                                Text {
+                                    id: tipText
+                                    anchors.centerIn: parent
+                                    text: "✅ 会议信息已复制到剪贴板"
+                                    font.pixelSize: 11
+                                    color: "white"
+                                }
+                            }
+
+                            Timer {
+                                id: copiedTimer
+                                interval: 2000
+                                onTriggered: copiedTip.visible = false
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ===== 历史会议页面 =====
+            ColumnLayout {
+                anchors.fill: parent
+                spacing: 16
+                visible: currentPage === "history"
+
+                // 标题栏
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 60
+                    radius: 16
+                    color: "#252542"
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 24
+                        anchors.rightMargin: 24
+
+                        Text {
+                            text: "📝 历史会议"
+                            font.pixelSize: 20
+                            font.bold: true
+                            color: "#FFFFFF"
+                        }
+
+                        Item { Layout.fillWidth: true }
+
+                        Button {
+                            implicitWidth: 80
+                            implicitHeight: 34
+                            text: "🔄 刷新"
+                            font.pixelSize: 12
+
+                            background: Rectangle {
+                                radius: 8
+                                color: parent.pressed ? "#3D3D5C" :
+                                       parent.hovered ? "#4D4D6C" : "#3D3D5C"
+                            }
+
+                            contentItem: Text {
+                                text: parent.text
+                                font.pixelSize: 12
+                                color: "white"
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
+
+                            onClicked: {
+                                if (meetingController && meetingController.userName && meetingController.liveKitManager) {
+                                    meetingController.liveKitManager.fetchMeetingHistory(meetingController.userName)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 会议列表
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    radius: 16
+                    color: "#252542"
+
+                    ListView {
+                        id: historyListView
+                        anchors.fill: parent
+                        anchors.margins: 16
+                        clip: true
+                        spacing: 8
+                        model: allMeetingsModel
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: parent.count === 0 ? "暂无历史会议记录" : ""
+                            font.pixelSize: 14
+                            color: "#808090"
+                            visible: parent.count === 0
+                        }
+
+                        delegate: Rectangle {
+                            width: ListView.view.width
+                            height: 72
+                            radius: 8
+                            color: histItemArea.containsMouse ? "#3D3D5C" : "#2D2D4A"
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 16
+                                anchors.rightMargin: 16
+                                spacing: 16
+
+                                Rectangle {
+                                    width: 44
+                                    height: 44
+                                    radius: 8
+                                    color: "#1E90FF"
+                                    opacity: 0.2
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: "📹"
+                                        font.pixelSize: 20
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 4
+
+                                    Text {
+                                        text: model.title
+                                        font.pixelSize: 15
+                                        font.bold: true
+                                        color: "#FFFFFF"
+                                    }
+
+                                    Text {
+                                        text: "会议号: " + model.meetingId + "  |  " + model.time + "  |  时长: " + model.duration
+                                        font.pixelSize: 13
+                                        color: "#808090"
+                                    }
+                                }
+
+                                Button {
+                                    implicitWidth: 80
+                                    implicitHeight: 32
+                                    text: "重新加入"
+                                    font.pixelSize: 12
+
+                                    background: Rectangle {
+                                        radius: 6
+                                        color: parent.pressed ? "#1873CC" :
+                                               parent.hovered ? "#4DA6FF" : "#1E90FF"
+                                    }
+
+                                    contentItem: Text {
+                                        text: parent.text
+                                        font.pixelSize: 12
+                                        color: "white"
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+
+                                    onClicked: checkRoomAndJoin(model.meetingId)
+                                }
+
+                                Button {
+                                    implicitWidth: 60
+                                    implicitHeight: 32
+                                    text: "删除"
+                                    font.pixelSize: 12
+
+                                    background: Rectangle {
+                                        radius: 6
+                                        color: parent.pressed ? "#D32F2F" :
+                                               parent.hovered ? "#EF5350" : "#3D3D5C"
+                                    }
+
+                                    contentItem: Text {
+                                        text: parent.text
+                                        font.pixelSize: 12
+                                        color: parent.parent.hovered ? "white" : "#B0B0C0"
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+
+                                    onClicked: deleteHistoryItem(model.historyId, index)
+                                }
+                            }
+
+                            MouseArea {
+                                id: histItemArea
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                acceptedButtons: Qt.NoButton
                             }
                         }
                     }

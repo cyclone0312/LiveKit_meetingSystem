@@ -67,31 +67,6 @@ Rectangle {
         
         Item { Layout.fillWidth: true }
         
-        // 中间控制按钮
-        RowLayout {
-            spacing: 4
-            
-            // 举手按钮
-            MeetingButton {
-                iconText: "✋"
-                labelText: meetingController.isHandRaised ? "放下手" : "举手"
-                isActive: meetingController.isHandRaised
-                activeColor: "#FF9800"
-                onClicked: toggleHandRaise()
-            }
-            
-            // 表情反应按钮
-            MeetingButton {
-                iconText: "😀"
-                labelText: "反应"
-                onClicked: {
-                    // 显示表情选择器
-                }
-            }
-        }
-        
-        Item { Layout.fillWidth: true }
-        
         // 右侧控制按钮
         RowLayout {
             spacing: 4

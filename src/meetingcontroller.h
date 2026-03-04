@@ -94,6 +94,7 @@ public slots:
   void inviteParticipants();
   void openSettings();
   void copyMeetingInfo();
+  Q_INVOKABLE void copyToClipboard(const QString &text);
   void switchView(const QString &viewType); // grid, speaker, gallery
 
   // 登录相关

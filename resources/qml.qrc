@@ -17,6 +17,7 @@
         <file>qml/dialogs/CreateMeetingDialog.qml</file>
         <file>qml/dialogs/SettingsDialog.qml</file>
         <file>qml/dialogs/ConnectionLoadingDialog.qml</file>
+        <file>qml/dialogs/ScheduleMeetingDialog.qml</file>
         <file>qml/styles/Theme.qml</file>
     </qresource>
 </RCC>

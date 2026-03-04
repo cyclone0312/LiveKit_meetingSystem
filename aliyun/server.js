@@ -398,7 +398,13 @@ app.post('/getToken', async (req, res) => {
         const at = new AccessToken(API_KEY, API_SECRET, { identity: participantName });
         at.addGrant({ roomJoin: true, room: roomName, canPublish: true, canSubscribe: true });
         const token = at.toJwt();
-        pool.execute('INSERT INTO meeting_logs (room_name, user_id, start_time) VALUES (?, ?, NOW())', [roomName, users[0].id]).catch(console.error);
+        // 重复进入同一个会议时，只更新最新入会时间
+        pool.execute(
+            `INSERT INTO meeting_logs (room_name, user_id, start_time)
+             VALUES (?, ?, NOW())
+             ON DUPLICATE KEY UPDATE start_time = NOW(), duration_seconds = NULL`,
+            [roomName, users[0].id]
+        ).catch(console.error);
         res.json({ success: true, token });
     } catch (e) {
         res.status(500).json({ error: 'server error' });
@@ -409,10 +415,40 @@ app.get('/api/history', async (req, res) => {
     const { username } = req.query;
     try {
         const [rows] = await pool.execute(
-            'SELECT l.id, l.room_name, l.start_time, l.duration_seconds FROM meeting_logs l JOIN users u ON l.user_id = u.id WHERE u.username = ? ORDER BY l.start_time DESC LIMIT 10',
+            `SELECT sub.id, sub.room_name, sub.start_time, sub.duration_seconds,
+                    COALESCE(s.title, CONCAT(u.username, '的会议')) as meeting_title
+             FROM (
+                 SELECT MAX(l.id) as id, l.room_name,
+                        MAX(l.start_time) as start_time,
+                        MAX(l.duration_seconds) as duration_seconds,
+                        l.user_id
+                 FROM meeting_logs l
+                 WHERE l.user_id = (SELECT id FROM users WHERE username = ?)
+                 GROUP BY l.room_name, l.user_id
+             ) sub
+             JOIN users u ON sub.user_id = u.id
+             LEFT JOIN scheduled_meetings s ON sub.room_name = s.room_id
+             ORDER BY sub.start_time DESC LIMIT 50`,
             [username]
         );
         res.json({ success: true, history: rows });
+    } catch (e) {
+        res.status(500).json({ success: false });
+    }
+});
+
+// 离开会议时更新时长
+app.post('/api/meeting/leave', async (req, res) => {
+    const { username, roomName } = req.body;
+    try {
+        await pool.execute(
+            `UPDATE meeting_logs l
+             JOIN users u ON l.user_id = u.id
+             SET l.duration_seconds = TIMESTAMPDIFF(SECOND, l.start_time, NOW())
+             WHERE u.username = ? AND l.room_name = ?`,
+            [username, roomName]
+        );
+        res.json({ success: true });
     } catch (e) {
         res.status(500).json({ success: false });
     }
@@ -653,6 +689,145 @@ app.post('/api/history/delete', async (req, res) => {
     } catch (e) {
         console.error('[History] delete error:', e.message);
         res.status(500).json({ success: false, error: '删除失败: ' + e.message });
+    }
+});
+
+// ==================== 预定会议功能 ====================
+
+// 自动创建 scheduled_meetings 表
+(async () => {
+    try {
+        await pool.execute(`
+            CREATE TABLE IF NOT EXISTS scheduled_meetings (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                title VARCHAR(255) NOT NULL,
+                room_id VARCHAR(20) NOT NULL,
+                creator_username VARCHAR(100) NOT NULL,
+                start_time DATETIME NOT NULL,
+                duration_minutes INT NOT NULL DEFAULT 60,
+                mute_on_join TINYINT(1) DEFAULT 1,
+                auto_record TINYINT(1) DEFAULT 0,
+                status ENUM('active', 'cancelled', 'completed') DEFAULT 'active',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_creator (creator_username),
+                INDEX idx_start_time (start_time),
+                INDEX idx_status (status)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+        console.log('[Schedule] scheduled_meetings 表已就绪');
+    } catch (e) {
+        console.error('[Schedule] 建表失败:', e.message);
+    }
+})();
+
+// 为 meeting_logs 添加唯一索引（去重支持）
+(async () => {
+    try {
+        // 先清理重复数据，只保留每个 room_name+user_id 的最新记录
+        await pool.execute(`
+            DELETE t1 FROM meeting_logs t1
+            INNER JOIN meeting_logs t2
+            WHERE t1.room_name = t2.room_name
+              AND t1.user_id = t2.user_id
+              AND t1.id < t2.id
+        `);
+        // 添加唯一索引
+        await pool.execute(`
+            ALTER TABLE meeting_logs ADD UNIQUE INDEX idx_room_user (room_name, user_id)
+        `);
+        console.log('[Migration] meeting_logs 唯一索引已添加');
+    } catch (e) {
+        if (e.code === 'ER_DUP_KEYNAME') {
+            // 索引已存在，忽略
+        } else {
+            console.log('[Migration] meeting_logs 索引:', e.message);
+        }
+    }
+})();
+
+/**
+ * POST /api/schedule/create
+ * 创建预定会议
+ * Body: { username, title, startTime, durationMinutes, muteOnJoin, autoRecord }
+ */
+app.post('/api/schedule/create', async (req, res) => {
+    const { username, title, startTime, durationMinutes, muteOnJoin, autoRecord } = req.body;
+    if (!username || !title || !startTime) {
+        return res.status(400).json({ success: false, error: '缺少必填参数' });
+    }
+
+    try {
+        // 生成 9 位会议号作为房间名
+        const roomId = String(Math.floor(100000000 + Math.random() * 900000000));
+        const duration = durationMinutes || 60;
+
+        await pool.execute(
+            `INSERT INTO scheduled_meetings (title, room_id, creator_username, start_time, duration_minutes, mute_on_join, auto_record)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [title, roomId, username, startTime, duration, muteOnJoin ? 1 : 0, autoRecord ? 1 : 0]
+        );
+
+        console.log(`[Schedule] 预定会议: user=${username} title=${title} room=${roomId} time=${startTime}`);
+        res.json({ success: true, roomId, message: '会议预定成功' });
+    } catch (e) {
+        console.error('[Schedule] create error:', e.message);
+        res.status(500).json({ success: false, error: '预定会议失败: ' + e.message });
+    }
+});
+
+/**
+ * GET /api/schedule/list?username=xxx
+ * 获取用户的预定会议列表（只返回 active 状态的未来会议 + 已过期但2小时内的）
+ */
+app.get('/api/schedule/list', async (req, res) => {
+    const { username } = req.query;
+    if (!username) {
+        return res.status(400).json({ success: false, error: '缺少 username' });
+    }
+
+    try {
+        const [rows] = await pool.execute(
+            `SELECT id, title, room_id, start_time, duration_minutes, mute_on_join, auto_record, status, created_at
+             FROM scheduled_meetings
+             WHERE creator_username = ? AND status = 'active'
+               AND start_time >= DATE_SUB(NOW(), INTERVAL 2 HOUR)
+             ORDER BY start_time ASC
+             LIMIT 50`,
+            [username]
+        );
+        res.json({ success: true, meetings: rows });
+    } catch (e) {
+        console.error('[Schedule] list error:', e.message);
+        res.status(500).json({ success: false, error: '获取预定会议失败: ' + e.message });
+    }
+});
+
+/**
+ * POST /api/schedule/cancel
+ * 取消预定会议
+ * Body: { id, username }
+ */
+app.post('/api/schedule/cancel', async (req, res) => {
+    const { id, username } = req.body;
+    if (!id || !username) {
+        return res.status(400).json({ success: false, error: '缺少参数' });
+    }
+
+    try {
+        const [result] = await pool.execute(
+            `UPDATE scheduled_meetings SET status = 'cancelled'
+             WHERE id = ? AND creator_username = ? AND status = 'active'`,
+            [id, username]
+        );
+        if (result.affectedRows > 0) {
+            console.log(`[Schedule] 取消会议: id=${id} user=${username}`);
+            res.json({ success: true, message: '会议已取消' });
+        } else {
+            res.json({ success: false, error: '会议不存在或已取消' });
+        }
+    } catch (e) {
+        console.error('[Schedule] cancel error:', e.message);
+        res.status(500).json({ success: false, error: '取消会议失败: ' + e.message });
     }
 });
 
