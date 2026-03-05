@@ -45,7 +45,8 @@ class MediaCapture;
  * @brief 视频帧接收器
  * 用于接收摄像头帧并转发给 LiveKit
  */
-class VideoFrameHandler : public QObject {
+class VideoFrameHandler : public QObject
+{
   Q_OBJECT
 public:
   explicit VideoFrameHandler(QObject *parent = nullptr);
@@ -71,7 +72,8 @@ private:
  * @brief 音频帧接收器
  * 用于接收麦克风数据并转发给 LiveKit
  */
-class AudioFrameHandler : public QIODevice {
+class AudioFrameHandler : public QIODevice
+{
   Q_OBJECT
 public:
   explicit AudioFrameHandler(int sampleRate, int channels,
@@ -124,7 +126,8 @@ private:
  *
  * 管理摄像头和麦克风的采集，并提供给 LiveKit SDK 使用
  */
-class MediaCapture : public QObject {
+class MediaCapture : public QObject
+{
   Q_OBJECT
 
   // QML 可访问的属性
@@ -177,7 +180,8 @@ public:
   Q_INVOKABLE void bindVideoSink(QVideoSink *sink) { setVideoSink(sink); }
 
   // 获取 QMediaCaptureSession（供 QML VideoOutput 使用）
-  Q_INVOKABLE QMediaCaptureSession *captureSession() const {
+  Q_INVOKABLE QMediaCaptureSession *captureSession() const
+  {
     return m_captureSession.get();
   }
 
@@ -186,10 +190,12 @@ public:
   std::shared_ptr<livekit::LocalAudioTrack> getAudioTrack();
 
   // 获取 LiveKit Source（用于直接访问）
-  std::shared_ptr<livekit::VideoSource> getVideoSource() {
+  std::shared_ptr<livekit::VideoSource> getVideoSource()
+  {
     return m_lkVideoSource;
   }
-  std::shared_ptr<livekit::AudioSource> getAudioSource() {
+  std::shared_ptr<livekit::AudioSource> getAudioSource()
+  {
     return m_lkAudioSource;
   }
 
@@ -285,8 +291,10 @@ private:
   bool m_microphoneActive = false;
 
   // 视频参数
-  static const int VIDEO_WIDTH = 1280;
-  static const int VIDEO_HEIGHT = 720;
+  // 与摄像头实际采集分辨率保持一致，避免 LiveKit 内部上采样后触发
+  // WebRTC 带宽估计下调，导致对端接收到更低的 simulcast 层（如 320x240）
+  static const int VIDEO_WIDTH = 640;
+  static const int VIDEO_HEIGHT = 480;
 
   // 音频参数
   static const int AUDIO_SAMPLE_RATE = 48000;

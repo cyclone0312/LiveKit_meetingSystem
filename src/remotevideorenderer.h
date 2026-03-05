@@ -29,7 +29,8 @@
  *
  * 从 LiveKit 远程视频轨道读取帧并渲染到外部 QVideoSink
  */
-class RemoteVideoRenderer : public QObject {
+class RemoteVideoRenderer : public QObject
+{
   Q_OBJECT
 
 public:
@@ -42,6 +43,16 @@ public:
    * 渲染器会将帧写入此 Sink
    */
   Q_INVOKABLE void setExternalVideoSink(QVideoSink *sink);
+
+  /**
+   * @brief 获取当前外部视频 Sink（线程安全）
+   * 用于在渲染器被销毁前保存 Sink，供重连后复用
+   */
+  QVideoSink *externalVideoSink() const
+  {
+    QMutexLocker locker(const_cast<QMutex *>(&m_mutex));
+    return m_externalSink.data();
+  }
 
   /**
    * @brief 获取关联的参会者 ID

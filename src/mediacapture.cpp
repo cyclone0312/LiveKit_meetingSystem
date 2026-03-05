@@ -126,6 +126,68 @@ void VideoFrameHandler::handleVideoFrame(const QVideoFrame &frame)
       directCopy = true;
     }
   }
+  // 【优化】YUYV (YUY2) 直接转换为 BGRA，避免走 toImage() 慢速路径。
+  // 本机摄像头常见 Format_YUYV，不在 BGRA 兼容列表内，之前每帧都要经过
+  // YUYV→QImage→ARGB32→BGRA 三次转换，CPU 占用高、延迟大。
+  // 此处用标准 BT.601 公式直接将 YUYV 转为 BGRA，每对像素只需一组 YUV 计算。
+  else if (format == QVideoFrameFormat::Format_YUYV)
+  {
+    // YUYV 打包格式：Y0 U0 Y1 V0（每 4 字节对应 2 个像素）
+    const uint8_t *src = mappedFrame.bits(0);
+    int srcBytesPerLine = mappedFrame.bytesPerLine(0);
+
+    if (src)
+    {
+      livekit::VideoFrame lkFrame = livekit::VideoFrame::create(
+          width, height, livekit::VideoBufferType::BGRA);
+      uint8_t *dst = lkFrame.data();
+
+      for (int row = 0; row < height; ++row)
+      {
+        const uint8_t *srcRow = src + row * srcBytesPerLine;
+        uint8_t *dstRow = dst + row * (width * 4);
+        for (int col = 0; col < width; col += 2)
+        {
+          int Y0 = static_cast<int>(srcRow[col * 2]);
+          int U = static_cast<int>(srcRow[col * 2 + 1]);
+          int Y1 = static_cast<int>(srcRow[col * 2 + 2]);
+          int V = static_cast<int>(srcRow[col * 2 + 3]);
+
+          // BT.601 full-range YUV → BGRA（inline lambda 以保持紧凑）
+          auto clamp256 = [](int v) -> uint8_t
+          {
+            return static_cast<uint8_t>(v < 0 ? 0 : v > 255 ? 255
+                                                            : v);
+          };
+          int C0 = Y0 - 16, C1 = Y1 - 16, D = U - 128, E = V - 128;
+          // 像素 0
+          dstRow[col * 4 + 0] = clamp256((298 * C0 + 516 * D + 128) >> 8);           // B
+          dstRow[col * 4 + 1] = clamp256((298 * C0 - 100 * D - 208 * E + 128) >> 8); // G
+          dstRow[col * 4 + 2] = clamp256((298 * C0 + 409 * E + 128) >> 8);           // R
+          dstRow[col * 4 + 3] = 255;                                                 // A
+          // 像素 1（共享 U/V）
+          dstRow[(col + 1) * 4 + 0] = clamp256((298 * C1 + 516 * D + 128) >> 8);
+          dstRow[(col + 1) * 4 + 1] = clamp256((298 * C1 - 100 * D - 208 * E + 128) >> 8);
+          dstRow[(col + 1) * 4 + 2] = clamp256((298 * C1 + 409 * E + 128) >> 8);
+          dstRow[(col + 1) * 4 + 3] = 255;
+        }
+      }
+
+      auto timestamp_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                              now.time_since_epoch())
+                              .count();
+      try
+      {
+        m_videoSource->captureFrame(lkFrame, timestamp_us);
+      }
+      catch (const std::exception &e)
+      {
+        if (m_frameCount % 100 == 0)
+          qWarning() << "[VideoFrameHandler] 捕获帧异常(YUYV):" << e.what();
+      }
+      directCopy = true;
+    }
+  }
 
   // 【回退路径】如果无法直接复制，使用 toImage 转换（原始方法）
   if (!directCopy)

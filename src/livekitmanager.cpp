@@ -171,7 +171,17 @@ void LiveKitRoomDelegate::onTrackUnsubscribed(
       auto renderer = mgr->m_remoteVideoRenderers.take(identity);
       if (renderer)
       {
+        // 【关键修复】断线重连时轨道会被取消再重新订阅。
+        // 在销毁渲染器前先取出 VideoSink 并存回 m_pendingVideoSinks，
+        // 这样重新订阅时新渲染器能立刻绑定同一个 Sink，避免视频黑屏。
+        QVideoSink *existingSink = renderer->externalVideoSink();
         renderer->stop();
+        if (existingSink)
+        {
+          mgr->m_pendingVideoSinks[identity] = existingSink;
+          qDebug() << "[LiveKit] VideoSink 已暂存，供轨道重订阅时复用:"
+                   << identity;
+        }
       }
       // 通知 QML 视频 Sink 已移除
       QMetaObject::invokeMethod(
