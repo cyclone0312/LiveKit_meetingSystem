@@ -210,7 +210,7 @@ Rectangle {
                 }
             }
             
-            // 【新增】监听 participantId 变化，重新绑定 VideoSink
+                    // 【修复3】监听 participantId 变化，重新绑定 VideoSink
             // GridView 的 delegate 可能在创建时 participantId 还未设置
             Connections {
                 target: videoItem
@@ -220,12 +220,42 @@ Rectangle {
                         bindRemoteVideoSinkTimer.start()
                     }
                 }
+
+                // 【修复3】当远端用户摄像头重新开启时（isCameraOn: false→true），
+                // VideoOutput 此时从不可见变为可见但 VideoSink 尚未绑定，
+                // 必须触发一次重新绑定，否则视频始终黑屏。
+                function onIsCameraOnChanged() {
+                    if (!isLocalUser && isCameraOn && participantId !== "" && participantId !== "self") {
+                        console.log("[VideoItem] 远程用户摄像头变为开启，重新绑定 VideoSink:", participantId)
+                        bindRemoteVideoSinkTimer.start()
+                    }
+                }
             }
-            
-            // 【新增】延迟绑定远程 VideoSink 的定时器
+
+            // 【修复4】监听 LiveKit trackSubscribed 信号。
+            // 场景：SDK 异步创建 renderer（QueuedConnection），
+            // QML 组件的 Component.onCompleted 50ms 定时器可能在
+            // renderer 尚未创建时就触发，sink 会进入 pendingVideoSinks。
+            // 当 trackSubscribed 信号发出时 renderer 即将被创建，
+            // 再延迟 200ms 后重新尝试绑定，确保两种时序都能覆盖。
+            Connections {
+                target: liveKitManager
+                function onTrackSubscribed(identity, trackSid, trackKind) {
+                    // trackKind == 1 是视频轨道（livekit::TrackKind::KIND_VIDEO）
+                    if (!isLocalUser && identity === participantId && trackKind === 1) {
+                        console.log("[VideoItem] trackSubscribed 事件，延迟重新绑定 VideoSink:", participantId)
+                        bindRemoteVideoSinkTimer.restart()
+                    }
+                }
+            }
+
+            // 【修复4】延迟绑定远程 VideoSink 的定时器
+            // interval 调整为 200ms：SDK onTrackSubscribed 回调 → Qt QueuedConnection
+            // 排队到主线程 → renderer 创建完成，至少需要 1-2 个事件循环周期；
+            // 200ms 足以覆盖正常情况，同时 pendingVideoSinks 也作为兜底机制。
             Timer {
                 id: bindRemoteVideoSinkTimer
-                interval: 50
+                interval: 200
                 repeat: false
                 onTriggered: {
                     if (!isLocalUser && participantId !== "" && participantId !== "self" && remoteVideoOutput.videoSink) {

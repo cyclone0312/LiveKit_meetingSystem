@@ -50,7 +50,9 @@ void RemoteVideoRenderer::start()
   livekit::VideoStream::Options options;
   // 使用 BGRA 格式，与发送端保持一致
   options.format = livekit::VideoBufferType::BGRA;
-  options.capacity = 5; // 【优化】增大缓冲区，应对网络抖动
+  // 【优化】增大缓冲区至 10 帧（@25fps ≈ 400ms），应对网络抖动；
+  // LiveKit WebRTC 内部也有 jitter buffer，这里作为额外缓冲
+  options.capacity = 10;
 
   try
   {
@@ -104,16 +106,18 @@ void RemoteVideoRenderer::renderLoop()
            << m_participantId;
 
   int frameCount = 0;
-  // 【优化】放宽帧率限制，上限 35fps，确保不会限制实际的 25fps 流
-  const auto minFrameInterval =
-      std::chrono::microseconds(1000000 / 35); // 上限 35fps
-  auto lastFrameTime = std::chrono::steady_clock::now();
+  // 【修复】移除了原先错误的帧率限制逻辑。
+  // 原问题：read() 消费了帧后执行 continue 跳回循环顶部，不更新 lastFrameTime，
+  // 导致连续快速消费并丢弃 ring-buffer 中所有排队帧，缓冲耗尽后 read() 长时
+  // 间阻塞，造成周期性卡顿/冻帧。
+  // LiveKit VideoStream ring-buffer 满时会自动丢弃最旧帧，已内置背压控制；
+  // WebRTC 层也有 jitter buffer，接收端无需额外限速。
 
   while (m_running.load() && m_videoStream)
   {
     livekit::VideoFrameEvent event;
 
-    // 阻塞读取视频帧
+    // 阻塞读取视频帧（ring-buffer 空时阻塞，有帧时立即返回）
     bool hasFrame = m_videoStream->read(event);
 
     if (!hasFrame)
@@ -131,18 +135,6 @@ void RemoteVideoRenderer::renderLoop()
 
     frameCount++;
 
-    // 【说明】VideoStream 内部是 ring-buffer（capacity=5），
-    // 缓冲区满时自动丢弃最旧帧，因此 read() 返回的帧已经是较新的
-
-    // 【优化】帧率控制：跳过过快到达的帧
-    auto now = std::chrono::steady_clock::now();
-    auto elapsed = now - lastFrameTime;
-    if (elapsed < minFrameInterval)
-    {
-      continue;
-    }
-    lastFrameTime = now;
-
     // 每 100 帧打印一次日志
     if (frameCount % 100 == 1)
     {
@@ -156,12 +148,17 @@ void RemoteVideoRenderer::renderLoop()
     QVideoFrame qtFrame = convertFrame(event.frame);
     if (qtFrame.isValid())
     {
-      QMutexLocker locker(&m_mutex);
-      QPointer<QVideoSink> sinkPointer = m_externalSink;
+      // 【修复】先在锁内取出 sink 引用，再在锁外调用 setVideoFrame。
+      // 原代码持锁期间调用 setVideoFrame，与主线程的 setExternalVideoSink
+      // 产生锁竞争，Qt 图形管线的回调也可能造成次生锁争抢，导致卡顿。
+      QPointer<QVideoSink> sinkPointer;
+      {
+        QMutexLocker locker(&m_mutex);
+        sinkPointer = m_externalSink;
+      }
       if (sinkPointer)
       {
-        // 【优化】直接在渲染线程设置帧，QVideoSink::setVideoFrame 在 Qt 6 中
-        // 是线程安全的，去掉 QueuedConnection 可消除 1-2 帧延迟
+        // QVideoSink::setVideoFrame 在 Qt 6 中是线程安全的
         sinkPointer->setVideoFrame(qtFrame);
       }
       else if (frameCount % 100 == 1)
