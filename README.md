@@ -25,25 +25,19 @@
 
 更详细的架构机制与数据流向设计，请参阅 [`summary.md`](./summary.md) 。
 
-## 🚀 构建与编译指南 (Windows)
-项目支持完整的 CMake 命令行构建流。以下是快速编译步骤示例（请使用原生的 Command Prompt）：
+## 🚀 构建与运行指南 (Windows)
+项目提供了便捷的自动构建脚本。您可以直接在项目根目录下的命令行或者终端中执行以下命令进行一键构建和运行：
 
-1. **环境准备**：你的机器需要安装 `Visual Studio 2022`、`Qt 6.x` 核心组件以及 `CMake` + `Ninja`。
-2. **配置终端**：在 cmd 中初始化 MSVC 环境并设置外部工具的 PATH：
+1. **执行构建**：
    ```cmd
-   call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
-   set "PATH=D:\qt\Tools\CMake_64\bin;D:\qt6.4\Tools\Ninja;%PATH%"
+   .\build.cmd
    ```
-3. **生成 CMake 结构图纸**：
+2. **运行程序**：
    ```cmd
-   cmake -S . -B build/release_manual -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="D:\qt6.4\6.8.3\msvc2022_64" -DCMAKE_MAKE_PROGRAM="D:\qt6.4\Tools\Ninja\ninja.exe"
-   ```
-4. **执行构建**：
-   ```cmd
-   cmake --build build/release_manual --config Release -j 16
+   .\build\release\MeetingApp.exe
    ```
 
-*(如需了解 CMake 底层具体在各阶段做了什么，请查看 [CMake 手动构建指南](./cmake_manual_build_guide.md))*
+*(该脚本将自动帮您初始化 MSVC、CMake、Ninja 及 Qt 的依赖环境并完成编译。如需了解自动脚本背后的构建具体原理或进行纯手工编译，请查看 [CMake 手动构建指南](./cmake_manual_build_guide.md))*
 
 ## 📄 更多技术文档
 项目中包含了不同维度的开发手册：
