@@ -1,6 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
+import QtMultimedia
 
 Dialog {
     id: settingsDialog
@@ -227,7 +228,11 @@ Dialog {
                 
                 // 视频设置
                 ColumnLayout {
+                    id: videoSettingsLayout
                     spacing: 16
+                    
+                    // 内部属性：跟踪预览摄像头是否由设置页启动
+                    property bool previewStartedBySettings: false
                     
                     Text {
                         text: "视频设置"
@@ -248,8 +253,10 @@ Dialog {
                         }
                         
                         ComboBox {
+                            id: cameraComboBox
                             Layout.fillWidth: true
-                            model: ["默认摄像头", "USB摄像头"]
+                            model: mediaCapture ? mediaCapture.availableCameras : ["无可用摄像头"]
+                            currentIndex: mediaCapture ? mediaCapture.currentCameraIndex : 0
                             font.pixelSize: 13
                             
                             background: Rectangle {
@@ -257,6 +264,56 @@ Dialog {
                                 radius: 6
                                 color: "#1A1A2E"
                                 border.color: "#404060"
+                            }
+                            
+                            contentItem: Text {
+                                leftPadding: 12
+                                text: cameraComboBox.displayText
+                                font: cameraComboBox.font
+                                color: "#FFFFFF"
+                                verticalAlignment: Text.AlignVCenter
+                                elide: Text.ElideRight
+                            }
+                            
+                            popup: Popup {
+                                y: cameraComboBox.height
+                                width: cameraComboBox.width
+                                implicitHeight: contentItem.implicitHeight + 2
+                                padding: 1
+                                
+                                contentItem: ListView {
+                                    clip: true
+                                    implicitHeight: contentHeight
+                                    model: cameraComboBox.popup.visible ? cameraComboBox.delegateModel : null
+                                    ScrollIndicator.vertical: ScrollIndicator {}
+                                }
+                                
+                                background: Rectangle {
+                                    radius: 6
+                                    color: "#1A1A2E"
+                                    border.color: "#404060"
+                                }
+                            }
+                            
+                            delegate: ItemDelegate {
+                                width: cameraComboBox.width
+                                height: 36
+                                contentItem: Text {
+                                    text: modelData
+                                    font.pixelSize: 13
+                                    color: cameraComboBox.highlightedIndex === index ? "#FFFFFF" : "#B0B0C0"
+                                    verticalAlignment: Text.AlignVCenter
+                                    leftPadding: 8
+                                }
+                                background: Rectangle {
+                                    color: cameraComboBox.highlightedIndex === index ? "#1E90FF" : "transparent"
+                                }
+                            }
+                            
+                            onActivated: function(index) {
+                                if (mediaCapture) {
+                                    mediaCapture.currentCameraIndex = index
+                                }
                             }
                         }
                     }
@@ -267,29 +324,91 @@ Dialog {
                         Layout.preferredHeight: 180
                         radius: 8
                         color: "#1A1A2E"
+                        clip: true
                         
+                        // 摄像头预览画面
+                        VideoOutput {
+                            id: settingsVideoOutput
+                            anchors.fill: parent
+                            visible: mediaCapture !== null && mediaCapture.cameraActive
+                            fillMode: VideoOutput.PreserveAspectCrop
+                            
+                            // 镜像显示（更自然）
+                            transform: Scale {
+                                origin.x: settingsVideoOutput.width / 2
+                                xScale: -1
+                            }
+                        }
+                        
+                        // 占位文字（无摄像头或未启动时显示）
                         Text {
                             anchors.centerIn: parent
-                            text: "摄像头预览"
+                            text: {
+                                if (!mediaCapture || mediaCapture.availableCameras.length === 0)
+                                    return "未检测到摄像头"
+                                if (meetingController && meetingController.isInMeeting)
+                                    return "会议中，预览不可用"
+                                if (!mediaCapture.cameraActive)
+                                    return "摄像头预览"
+                                return ""
+                            }
                             font.pixelSize: 14
                             color: "#606070"
+                            visible: !settingsVideoOutput.visible
                         }
                     }
                     
-                    // 视频选项
-                    CheckBox {
-                        text: "高清视频"
-                        font.pixelSize: 13
-                        checked: true
-                    }
-                    
-                    CheckBox {
-                        text: "镜像我的视频"
-                        font.pixelSize: 13
-                        checked: true
-                    }
-                    
                     Item { Layout.fillHeight: true }
+                    
+                    // 当视频设置页可见时启动摄像头预览
+                    // settingsMenu.currentIndex === 1 表示当前选中"视频"标签
+                    Connections {
+                        target: settingsMenu
+                        function onCurrentIndexChanged() {
+                            if (settingsMenu.currentIndex === 1 && settingsDialog.visible) {
+                                videoSettingsLayout.startPreviewIfNeeded()
+                            } else {
+                                videoSettingsLayout.stopPreviewIfNeeded()
+                            }
+                        }
+                    }
+                    
+                    // 对话框可见性变化时管理摄像头
+                    Connections {
+                        target: settingsDialog
+                        function onVisibleChanged() {
+                            if (settingsDialog.visible && settingsMenu.currentIndex === 1) {
+                                videoSettingsLayout.startPreviewIfNeeded()
+                            } else {
+                                videoSettingsLayout.stopPreviewIfNeeded()
+                            }
+                        }
+                    }
+                    
+                    function startPreviewIfNeeded() {
+                        if (!mediaCapture) return
+                        // 会议中不抢占摄像头
+                        if (meetingController && meetingController.isInMeeting) return
+                        if (mediaCapture.availableCameras.length === 0) return
+                        
+                        if (!mediaCapture.cameraActive) {
+                            mediaCapture.startCamera()
+                            previewStartedBySettings = true
+                        }
+                        // 绑定 VideoOutput 的 sink 到 mediaCapture
+                        if (settingsVideoOutput.videoSink) {
+                            mediaCapture.bindVideoSink(settingsVideoOutput.videoSink)
+                        }
+                    }
+                    
+                    function stopPreviewIfNeeded() {
+                        if (!mediaCapture) return
+                        // 只有设置页自己启动的摄像头才由设置页停止
+                        if (previewStartedBySettings && mediaCapture.cameraActive) {
+                            mediaCapture.stopCamera()
+                            previewStartedBySettings = false
+                        }
+                    }
                 }
                 
                 // 常规设置
