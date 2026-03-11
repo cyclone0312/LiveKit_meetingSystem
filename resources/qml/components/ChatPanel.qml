@@ -4,17 +4,6 @@ import QtQuick.Layouts 1.15
 
 Item {
     id: chatPanel
-
-    // 监听 AI 回复，显示在聊天列表中
-    Connections {
-        target: aiAssistant
-        function onAiReplyReceived(reply) {
-            chatModel.addMessage("ai-assistant", "🤖 小会", reply, false)
-        }
-        function onAiError(error) {
-            chatModel.addMessage("ai-assistant", "🤖 小会", "⚠ " + error, false)
-        }
-    }
     
     ColumnLayout {
         anchors.fill: parent

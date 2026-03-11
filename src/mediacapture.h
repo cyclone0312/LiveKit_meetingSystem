@@ -105,6 +105,7 @@ signals:
    */
   void rawAudioCaptured(const QByteArray &pcmData, int sampleRate,
                         int channels);
+  void audioLevelCalculated(qreal level);
 
 private:
   // 将积攒的 PCM 数据按 10ms 帧处理并发送
@@ -146,6 +147,7 @@ class MediaCapture : public QObject
                  setCurrentCameraIndex NOTIFY currentCameraIndexChanged)
   Q_PROPERTY(int currentMicrophoneIndex READ currentMicrophoneIndex WRITE
                  setCurrentMicrophoneIndex NOTIFY currentMicrophoneIndexChanged)
+  Q_PROPERTY(qreal audioLevel READ audioLevel NOTIFY audioLevelChanged)
 
 public:
   explicit MediaCapture(QObject *parent = nullptr);
@@ -159,6 +161,7 @@ public:
   QStringList availableMicrophones() const;
   int currentCameraIndex() const;
   int currentMicrophoneIndex() const;
+  qreal audioLevel() const;
 
   // 属性 Setter
   void setVideoSink(QVideoSink *sink);
@@ -237,6 +240,7 @@ signals:
   void availableMicrophonesChanged();
   void currentCameraIndexChanged();
   void currentMicrophoneIndexChanged();
+  void audioLevelChanged();
 
   // 事件信号
   void cameraError(const QString &error);
@@ -294,6 +298,7 @@ private:
   // 状态
   bool m_cameraActive = false;
   bool m_microphoneActive = false;
+  qreal m_audioLevel = 0.0;
 
   // 视频参数
   // 与摄像头实际采集分辨率保持一致，避免 LiveKit 内部上采样后触发

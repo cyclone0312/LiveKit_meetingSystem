@@ -244,6 +244,10 @@ ApplicationWindow {
     ScheduleMeetingDialog {
         id: scheduleMeetingDialog
     }
+
+    VideoPreviewDialog {
+        id: videoPreviewDialog
+    }
     
     // 连接等待对话框
     ConnectionLoadingDialog {

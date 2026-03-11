@@ -741,7 +741,7 @@ Page {
                             }
                         }
                         
-                        // 共享屏幕
+                        // 视频预览
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.fillHeight: true
@@ -765,14 +765,14 @@ Page {
                                     
                                     Text {
                                         anchors.centerIn: parent
-                                        text: "🖥"
+                                        text: "🎥"
                                         font.pixelSize: 24
                                     }
                                 }
                                 
                                 Text {
                                     Layout.alignment: Qt.AlignHCenter
-                                    text: "共享屏幕"
+                                    text: "视频预览"
                                     font.pixelSize: 16
                                     font.bold: true
                                     color: "#FFFFFF"
@@ -780,7 +780,7 @@ Page {
                                 
                                 Text {
                                     Layout.alignment: Qt.AlignHCenter
-                                    text: "共享到会议"
+                                    text: "预览摄像头和麦克风"
                                     font.pixelSize: 13
                                     color: "#808090"
                                 }
@@ -791,6 +791,7 @@ Page {
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
+                                onClicked: videoPreviewDialog.open()
                             }
                         }
                     }

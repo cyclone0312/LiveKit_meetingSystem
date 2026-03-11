@@ -10,6 +10,7 @@
 #include <QThread>
 #include <QVideoFrameFormat>
 #include <chrono>
+#include <cmath>
 
 // =============================================================================
 // VideoFrameHandler 实现
@@ -292,6 +293,22 @@ qint64 AudioFrameHandler::writeData(const char *data, qint64 len)
 
   // 假设使用 16-bit PCM
   int totalSamples = static_cast<int>(len / sizeof(std::int16_t));
+
+  // 计算 RMS 音量电平
+  if (totalSamples > 0)
+  {
+    const auto *pcm = reinterpret_cast<const std::int16_t *>(data);
+    double sumSquares = 0.0;
+    for (int i = 0; i < totalSamples; ++i)
+    {
+      double s = static_cast<double>(pcm[i]) / 32768.0;
+      sumSquares += s * s;
+    }
+    double rms = std::sqrt(sumSquares / totalSamples);
+    // 归一化到 0~1，乘以系数放大低音量显示
+    qreal level = qBound(0.0, rms * 5.0, 1.0);
+    emit audioLevelCalculated(level);
+  }
   if (totalSamples <= 0)
   {
     return len;
@@ -453,6 +470,16 @@ void MediaCapture::createLiveKitSources()
   // 转发原始 PCM 数据信号（供 AI 语音转录）
   connect(m_audioHandler.get(), &AudioFrameHandler::rawAudioCaptured, this,
           &MediaCapture::rawAudioCaptured);
+  // 转发音量电平信号
+  connect(m_audioHandler.get(), &AudioFrameHandler::audioLevelCalculated, this,
+          [this](qreal level)
+          {
+            if (qAbs(m_audioLevel - level) > 0.01)
+            {
+              m_audioLevel = level;
+              emit audioLevelChanged();
+            }
+          });
   // 转发本地视频帧信号（供视频录制合成）
   connect(m_videoHandler.get(), &VideoFrameHandler::localVideoFrameReady, this,
           &MediaCapture::localVideoFrameReady);
@@ -537,6 +564,11 @@ void MediaCapture::setCurrentCameraIndex(int index)
 int MediaCapture::currentMicrophoneIndex() const
 {
   return m_currentMicrophoneIndex;
+}
+
+qreal MediaCapture::audioLevel() const
+{
+  return m_audioLevel;
 }
 
 void MediaCapture::setCurrentMicrophoneIndex(int index)
@@ -644,6 +676,16 @@ void MediaCapture::resetLiveKitSources()
   // 转发原始 PCM 数据信号（供 AI 语音转录）
   connect(m_audioHandler.get(), &AudioFrameHandler::rawAudioCaptured, this,
           &MediaCapture::rawAudioCaptured);
+  // 转发音量电平信号
+  connect(m_audioHandler.get(), &AudioFrameHandler::audioLevelCalculated, this,
+          [this](qreal level)
+          {
+            if (qAbs(m_audioLevel - level) > 0.01)
+            {
+              m_audioLevel = level;
+              emit audioLevelChanged();
+            }
+          });
 
   // 创建新的轨道
   m_lkVideoTrack = livekit::LocalVideoTrack::createLocalVideoTrack(
@@ -873,6 +915,16 @@ void MediaCapture::startMicrophone()
     // 转发原始 PCM 数据信号（供 AI 语音转录）
     connect(m_audioHandler.get(), &AudioFrameHandler::rawAudioCaptured, this,
             &MediaCapture::rawAudioCaptured);
+    // 转发音量电平信号
+    connect(m_audioHandler.get(), &AudioFrameHandler::audioLevelCalculated, this,
+            [this](qreal level)
+            {
+              if (qAbs(m_audioLevel - level) > 0.01)
+              {
+                m_audioLevel = level;
+                emit audioLevelChanged();
+              }
+            });
 
     // 重新创建音频轨道
     m_lkAudioTrack = livekit::LocalAudioTrack::createLocalAudioTrack(
