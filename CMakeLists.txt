@@ -16,6 +16,9 @@ set(CMAKE_AUTOUIC ON)
 #   LINKS_SDK_ARCH       - 架构 x64/arm64 (默认 x64)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/FetchLiveKit.cmake)
 
+# ==================== 1b. FFmpeg 自动下载与配置 ====================
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/FetchFFmpeg.cmake)
+
 # [Windows Debug 配置] - extend 目录下 (如果有 Debug 版 SDK，可选)
 if(WIN32)
     set(LIVEKIT_DEBUG_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/extend/livekit-sdk-windows-x64-debug")
@@ -46,6 +49,12 @@ set(LIB_SOURCES
     src/remoteaudioplayer.h
     src/aiassistant.cpp
     src/aiassistant.h
+    src/audiomixer.cpp
+    src/audiomixer.h
+    src/videocompositor.cpp
+    src/videocompositor.h
+    src/meetingrecorder.cpp
+    src/meetingrecorder.h
 )
 
 # 源文件（包含 main.cpp）
@@ -86,6 +95,15 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     LiveKit::livekit_ffi
 )
 
+# ==================== 2b. 链接 FFmpeg ====================
+target_link_libraries(${PROJECT_NAME} PRIVATE
+    FFmpeg::avcodec
+    FFmpeg::avformat
+    FFmpeg::avutil
+    FFmpeg::swscale
+    FFmpeg::swresample
+)
+
 # [Windows] 可选的 Debug SDK 配置（使用 extend/ 下的 Debug 版 SDK）
 if(WIN32 AND DEFINED LIVEKIT_DEBUG_LIB AND EXISTS "${LIVEKIT_DEBUG_LIB}/livekit.lib")
     # 为 Imported Targets 添加 DEBUG 配置
@@ -109,6 +127,11 @@ endif()
 # ==================== 3. 自动复制运行时库到输出目录 (跨平台) ====================
 # 使用 FetchLiveKit.cmake 提供的辅助函数复制 Release 运行时库
 livekit_copy_runtime_libs(${PROJECT_NAME})
+
+# 复制 FFmpeg 运行时库
+if(COMMAND ffmpeg_copy_runtime_libs)
+    ffmpeg_copy_runtime_libs(${PROJECT_NAME})
+endif()
 
 # [Windows Debug] 额外复制 Debug 版本的 DLL
 if(WIN32 AND DEFINED LIVEKIT_DEBUG_BIN AND EXISTS "${LIVEKIT_DEBUG_BIN}")

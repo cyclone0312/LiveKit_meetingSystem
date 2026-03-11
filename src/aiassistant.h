@@ -30,13 +30,15 @@
 /**
  * @brief 一条转录记录
  */
-struct TranscriptEntry {
+struct TranscriptEntry
+{
   QString time;    // 时间戳 "HH:mm:ss"
   QString speaker; // 发言者
   QString text;    // 转录文本
 };
 
-class AIAssistant : public QObject {
+class AIAssistant : public QObject
+{
   Q_OBJECT
 
   // ====== AI 对话相关属性 ======
@@ -172,6 +174,13 @@ public slots:
   Q_INVOKABLE void deleteLocalRecording(int index);
 
   /**
+   * @brief 保存视频录制元数据（供 MeetingRecorder 调用）
+   */
+  Q_INVOKABLE void saveVideoRecordingMeta(const QString &filePath,
+                                          const QString &meetingTitle,
+                                          int durationSec);
+
+  /**
    * @brief 加载本地录音列表
    */
   Q_INVOKABLE void loadLocalRecordings();
@@ -247,7 +256,8 @@ private:
    */
   void saveRecordingMeta(const QString &filePath, const QString &meetingTitle,
                          const QString &roomName, const QString &userName,
-                         int durationSec, qint64 fileSize);
+                         int durationSec, qint64 fileSize,
+                         const QString &recordType = "audio");
   void removeRecordingMeta(int index);
 
 private:
@@ -264,11 +274,11 @@ private:
   QString m_lastError;
 
   // 本地录音状态
-  bool m_isRecordingAudio;        // 是否正在录音
-  bool m_isTranscribing;          // 是否正在转录中（等待服务端返回）
-  QByteArray m_audioRecordBuffer; // 本地 PCM 录音缓冲（16kHz mono 16-bit）
-  QTimer *m_recordingTimer;       // 录音计时器（更新时长显示）
-  int m_recordingSeconds;         // 已录音秒数
+  bool m_isRecordingAudio;              // 是否正在录音
+  bool m_isTranscribing;                // 是否正在转录中（等待服务端返回）
+  QByteArray m_audioRecordBuffer;       // 本地 PCM 录音缓冲（16kHz mono 16-bit）
+  QTimer *m_recordingTimer;             // 录音计时器（更新时长显示）
+  int m_recordingSeconds;               // 已录音秒数
   QList<TranscriptEntry> m_transcripts; // 全部已确认的转录历史
 
   // 本地录音文件列表缓存

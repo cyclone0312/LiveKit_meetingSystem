@@ -228,6 +228,16 @@ void VideoFrameHandler::handleVideoFrame(const QVideoFrame &frame)
   }
 
   mappedFrame.unmap();
+
+  // 发出本地视频帧信号供 VideoCompositor 使用
+  {
+    QImage image = frame.toImage();
+    if (!image.isNull())
+    {
+      emit localVideoFrameReady(image);
+    }
+  }
+
   emit frameProcessed();
 }
 
@@ -443,6 +453,9 @@ void MediaCapture::createLiveKitSources()
   // 转发原始 PCM 数据信号（供 AI 语音转录）
   connect(m_audioHandler.get(), &AudioFrameHandler::rawAudioCaptured, this,
           &MediaCapture::rawAudioCaptured);
+  // 转发本地视频帧信号（供视频录制合成）
+  connect(m_videoHandler.get(), &VideoFrameHandler::localVideoFrameReady, this,
+          &MediaCapture::localVideoFrameReady);
 
   // 创建 LiveKit 轨道
   m_lkVideoTrack = livekit::LocalVideoTrack::createLocalVideoTrack(

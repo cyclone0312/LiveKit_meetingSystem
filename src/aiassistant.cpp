@@ -15,12 +15,13 @@ AIAssistant::AIAssistant(QObject *parent)
     : QObject(parent), m_networkManager(new QNetworkAccessManager(this)),
       m_serverUrl("http://8.162.3.195:3000"), m_isBusy(false),
       m_isRecordingAudio(false), m_isTranscribing(false),
-      m_recordingTimer(new QTimer(this)), m_recordingSeconds(0) {
+      m_recordingTimer(new QTimer(this)), m_recordingSeconds(0)
+{
   // 录音计时器：每秒更新录音时长显示
-  connect(m_recordingTimer, &QTimer::timeout, this, [this]() {
+  connect(m_recordingTimer, &QTimer::timeout, this, [this]()
+          {
     m_recordingSeconds++;
-    emit recordingDurationChanged();
-  });
+    emit recordingDurationChanged(); });
 
   qDebug() << "[AIAssistant] 初始化完成 (本地录音 + 离线 ASR 模式)";
 
@@ -28,8 +29,10 @@ AIAssistant::AIAssistant(QObject *parent)
   loadLocalRecordings();
 }
 
-AIAssistant::~AIAssistant() {
-  if (m_isRecordingAudio) {
+AIAssistant::~AIAssistant()
+{
+  if (m_isRecordingAudio)
+  {
     // 正在录音，先保存再销毁
     saveRecordingToFile();
   }
@@ -48,7 +51,8 @@ QString AIAssistant::roomName() const { return m_roomName; }
 QString AIAssistant::userName() const { return m_userName; }
 QVariantList AIAssistant::localRecordings() const { return m_localRecordings; }
 
-QString AIAssistant::recordingDuration() const {
+QString AIAssistant::recordingDuration() const
+{
   int minutes = m_recordingSeconds / 60;
   int seconds = m_recordingSeconds % 60;
   return QString("%1:%2")
@@ -58,22 +62,28 @@ QString AIAssistant::recordingDuration() const {
 
 // ==================== 属性 Setter ====================
 
-void AIAssistant::setServerUrl(const QString &url) {
-  if (m_serverUrl != url) {
+void AIAssistant::setServerUrl(const QString &url)
+{
+  if (m_serverUrl != url)
+  {
     m_serverUrl = url;
     emit serverUrlChanged();
   }
 }
 
-void AIAssistant::setRoomName(const QString &name) {
-  if (m_roomName != name) {
+void AIAssistant::setRoomName(const QString &name)
+{
+  if (m_roomName != name)
+  {
     m_roomName = name;
     emit roomNameChanged();
   }
 }
 
-void AIAssistant::setUserName(const QString &name) {
-  if (m_userName != name) {
+void AIAssistant::setUserName(const QString &name)
+{
+  if (m_userName != name)
+  {
     m_userName = name;
     emit userNameChanged();
   }
@@ -81,8 +91,10 @@ void AIAssistant::setUserName(const QString &name) {
 
 // ==================== AI 对话接口 ====================
 
-void AIAssistant::sendMessage(const QString &message) {
-  if (message.trimmed().isEmpty() || m_roomName.isEmpty()) {
+void AIAssistant::sendMessage(const QString &message)
+{
+  if (message.trimmed().isEmpty() || m_roomName.isEmpty())
+  {
     setError("消息或房间名不能为空");
     return;
   }
@@ -95,21 +107,27 @@ void AIAssistant::sendMessage(const QString &message) {
   body["message"] = message;
 
   postRequest("/api/ai/chat", body,
-              [this](bool success, const QJsonObject &json) {
+              [this](bool success, const QJsonObject &json)
+              {
                 setBusy(false);
-                if (success) {
+                if (success)
+                {
                   m_lastReply = json["reply"].toString();
                   emit lastReplyChanged();
                   emit aiReplyReceived(m_lastReply);
                   qDebug() << "[AIAssistant] AI 回复:" << m_lastReply.left(80);
-                } else {
+                }
+                else
+                {
                   setError(json["error"].toString("AI 请求失败"));
                 }
               });
 }
 
-void AIAssistant::summarize(const QVariantList &chatHistory) {
-  if (m_roomName.isEmpty()) {
+void AIAssistant::summarize(const QVariantList &chatHistory)
+{
+  if (m_roomName.isEmpty())
+  {
     setError("房间名不能为空");
     return;
   }
@@ -117,7 +135,8 @@ void AIAssistant::summarize(const QVariantList &chatHistory) {
   setBusy(true);
 
   QJsonArray historyArray;
-  for (const auto &item : chatHistory) {
+  for (const auto &item : chatHistory)
+  {
     QVariantMap map = item.toMap();
     QJsonObject entry;
     entry["sender"] = map["sender"].toString();
@@ -131,19 +150,25 @@ void AIAssistant::summarize(const QVariantList &chatHistory) {
   body["chatHistory"] = historyArray;
 
   postRequest("/api/ai/summarize", body,
-              [this](bool success, const QJsonObject &json) {
+              [this](bool success, const QJsonObject &json)
+              {
                 setBusy(false);
-                if (success) {
+                if (success)
+                {
                   QString summary = json["summary"].toString();
                   emit summaryReceived(summary);
-                } else {
+                }
+                else
+                {
                   setError(json["error"].toString("摘要生成失败"));
                 }
               });
 }
 
-void AIAssistant::generateMeetingMinutes(const QVariantList &chatHistory) {
-  if (m_roomName.isEmpty()) {
+void AIAssistant::generateMeetingMinutes(const QVariantList &chatHistory)
+{
+  if (m_roomName.isEmpty())
+  {
     setError("房间名不能为空");
     return;
   }
@@ -152,7 +177,8 @@ void AIAssistant::generateMeetingMinutes(const QVariantList &chatHistory) {
 
   // 构建转录数组
   QJsonArray transcriptsArray;
-  for (const auto &entry : m_transcripts) {
+  for (const auto &entry : m_transcripts)
+  {
     QJsonObject obj;
     obj["time"] = entry.time;
     obj["speaker"] = entry.speaker;
@@ -162,7 +188,8 @@ void AIAssistant::generateMeetingMinutes(const QVariantList &chatHistory) {
 
   // 构建聊天记录数组
   QJsonArray chatArray;
-  for (const auto &item : chatHistory) {
+  for (const auto &item : chatHistory)
+  {
     QVariantMap map = item.toMap();
     QJsonObject entry;
     entry["sender"] = map["sender"].toString();
@@ -177,45 +204,54 @@ void AIAssistant::generateMeetingMinutes(const QVariantList &chatHistory) {
   body["chatHistory"] = chatArray;
 
   postRequest("/api/ai/meeting-minutes", body,
-              [this](bool success, const QJsonObject &json) {
+              [this](bool success, const QJsonObject &json)
+              {
                 setBusy(false);
-                if (success) {
+                if (success)
+                {
                   QString minutes = json["minutes"].toString();
                   emit meetingMinutesReceived(minutes);
-                } else {
+                }
+                else
+                {
                   setError(json["error"].toString("会议纪要生成失败"));
                 }
               });
 }
 
-void AIAssistant::clearAIHistory() {
+void AIAssistant::clearAIHistory()
+{
   if (m_roomName.isEmpty())
     return;
 
   QJsonObject body;
   body["roomName"] = m_roomName;
 
-  postRequest("/api/ai/clear", body, [this](bool success, const QJsonObject &) {
+  postRequest("/api/ai/clear", body, [this](bool success, const QJsonObject &)
+              {
     if (success) {
       qDebug() << "[AIAssistant] AI 历史已清除";
-    }
-  });
+    } });
 }
 
 // ==================== 录音 + 离线转录控制 ====================
 
-void AIAssistant::startRecording() {
-  if (m_isRecordingAudio) {
+void AIAssistant::startRecording()
+{
+  if (m_isRecordingAudio)
+  {
     qDebug() << "[AIAssistant] 已经在录音中，忽略重复调用";
     return;
   }
 
-  if (m_roomName.isEmpty()) {
+  if (m_roomName.isEmpty())
+  {
     setError("房间名不能为空，无法启动录音");
     return;
   }
 
-  if (m_userName.isEmpty()) {
+  if (m_userName.isEmpty())
+  {
     setError("用户名不能为空，无法启动录音");
     return;
   }
@@ -235,8 +271,10 @@ void AIAssistant::startRecording() {
            << "room=" << m_roomName << "user=" << m_userName;
 }
 
-void AIAssistant::stopRecordingAndTranscribe() {
-  if (!m_isRecordingAudio) {
+void AIAssistant::stopRecordingAndTranscribe()
+{
+  if (!m_isRecordingAudio)
+  {
     qDebug() << "[AIAssistant] 未在录音，忽略停止调用";
     return;
   }
@@ -292,7 +330,8 @@ void AIAssistant::stopRecordingAndTranscribe() {
 
   QNetworkReply *reply = m_networkManager->post(request, postData);
 
-  connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+  connect(reply, &QNetworkReply::finished, this, [this, reply]()
+          {
     reply->deleteLater();
     m_isTranscribing = false;
     emit transcribingChanged();
@@ -332,12 +371,12 @@ void AIAssistant::stopRecordingAndTranscribe() {
       qWarning() << "[AIAssistant] 转录失败:" << errMsg;
       setError(errMsg);
       emit transcriptionFailed(errMsg);
-    }
-  });
+    } });
 }
 
 void AIAssistant::feedAudioData(const QByteArray &pcmData, int sampleRate,
-                                int channels) {
+                                int channels)
+{
   // 仅在录音状态时才缓存数据
   if (!m_isRecordingAudio)
     return;
@@ -345,10 +384,13 @@ void AIAssistant::feedAudioData(const QByteArray &pcmData, int sampleRate,
   const int targetRate = 16000; // ASR 要求 16kHz
   QByteArray chunk;
 
-  if (sampleRate == targetRate && channels == 1) {
+  if (sampleRate == targetRate && channels == 1)
+  {
     // 已经是 16kHz 单声道，直接使用
     chunk = pcmData;
-  } else {
+  }
+  else
+  {
     // --- 带低通滤波的降采样 + 混音到单声道 ---
     const int16_t *src = reinterpret_cast<const int16_t *>(pcmData.constData());
     int totalSamples = pcmData.size() / sizeof(int16_t);
@@ -362,18 +404,23 @@ void AIAssistant::feedAudioData(const QByteArray &pcmData, int sampleRate,
     chunk.resize(outFrames * static_cast<int>(sizeof(int16_t)));
     int16_t *dst = reinterpret_cast<int16_t *>(chunk.data());
 
-    for (int i = 0; i < outFrames; ++i) {
+    for (int i = 0; i < outFrames; ++i)
+    {
       // 对 ratio 个输入帧取平均值（简单低通滤波，防止混叠）
       int64_t sum = 0;
       int count = 0;
-      for (int j = 0; j < ratio; ++j) {
+      for (int j = 0; j < ratio; ++j)
+      {
         int srcFrame = i * ratio + j;
         if (srcFrame >= frames)
           break;
 
-        if (channels == 1) {
+        if (channels == 1)
+        {
           sum += src[srcFrame];
-        } else {
+        }
+        else
+        {
           // 多声道混音：取所有声道平均值
           int32_t chSum = 0;
           for (int ch = 0; ch < channels; ++ch)
@@ -390,9 +437,11 @@ void AIAssistant::feedAudioData(const QByteArray &pcmData, int sampleRate,
   m_audioRecordBuffer.append(chunk);
 }
 
-QVariantList AIAssistant::getTranscripts() const {
+QVariantList AIAssistant::getTranscripts() const
+{
   QVariantList result;
-  for (const auto &entry : m_transcripts) {
+  for (const auto &entry : m_transcripts)
+  {
     QVariantMap map;
     map["time"] = entry.time;
     map["speaker"] = entry.speaker;
@@ -402,14 +451,16 @@ QVariantList AIAssistant::getTranscripts() const {
   return result;
 }
 
-void AIAssistant::clearTranscripts() {
+void AIAssistant::clearTranscripts()
+{
   m_transcripts.clear();
   emit transcriptCountChanged();
 }
 
 // ==================== 本地录音文件管理 ====================
 
-QString AIAssistant::recordingsDir() const {
+QString AIAssistant::recordingsDir() const
+{
   QString dir =
       QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) +
       "/MeetingRecordings";
@@ -417,8 +468,10 @@ QString AIAssistant::recordingsDir() const {
   return dir;
 }
 
-void AIAssistant::saveRecordingToFile() {
-  if (!m_isRecordingAudio && m_audioRecordBuffer.isEmpty()) {
+void AIAssistant::saveRecordingToFile()
+{
+  if (!m_isRecordingAudio && m_audioRecordBuffer.isEmpty())
+  {
     qDebug() << "[AIAssistant] 无录音数据可保存";
     return;
   }
@@ -429,7 +482,8 @@ void AIAssistant::saveRecordingToFile() {
   emit recordingAudioChanged();
 
   int bufferSize = m_audioRecordBuffer.size();
-  if (bufferSize < 3200) { // 太短
+  if (bufferSize < 3200)
+  { // 太短
     qDebug() << "[AIAssistant] 录音太短，不保存";
     m_audioRecordBuffer.clear();
     return;
@@ -450,7 +504,8 @@ void AIAssistant::saveRecordingToFile() {
 
   // 写入文件
   QFile file(filePath);
-  if (!file.open(QIODevice::WriteOnly)) {
+  if (!file.open(QIODevice::WriteOnly))
+  {
     qWarning() << "[AIAssistant] 保存录音失败:" << file.errorString();
     setError("保存录音文件失败: " + file.errorString());
     return;
@@ -472,14 +527,17 @@ void AIAssistant::saveRecordingToFile() {
   emit recordingSaved(filePath);
 }
 
-void AIAssistant::transcribeLocalFile(const QString &filePath) {
-  if (m_isTranscribing) {
+void AIAssistant::transcribeLocalFile(const QString &filePath)
+{
+  if (m_isTranscribing)
+  {
     setError("正在转录中，请稍候");
     return;
   }
 
   QFile file(filePath);
-  if (!file.exists() || !file.open(QIODevice::ReadOnly)) {
+  if (!file.exists() || !file.open(QIODevice::ReadOnly))
+  {
     setError("无法读取录音文件: " + filePath);
     return;
   }
@@ -511,7 +569,8 @@ void AIAssistant::transcribeLocalFile(const QString &filePath) {
 
   QString savedFilePath = filePath; // 在 lambda 中使用的副本
   connect(
-      reply, &QNetworkReply::finished, this, [this, reply, savedFilePath]() {
+      reply, &QNetworkReply::finished, this, [this, reply, savedFilePath]()
+      {
         reply->deleteLater();
         m_isTranscribing = false;
         emit transcribingChanged();
@@ -548,19 +607,21 @@ void AIAssistant::transcribeLocalFile(const QString &filePath) {
           QString errMsg = json["error"].toString("转录失败");
           setError(errMsg);
           emit transcriptionFailed(errMsg);
-        }
-      });
+        } });
 }
 
-void AIAssistant::generateMinutesFromFile(const QString &filePath) {
-  if (m_isBusy || m_isTranscribing) {
+void AIAssistant::generateMinutesFromFile(const QString &filePath)
+{
+  if (m_isBusy || m_isTranscribing)
+  {
     setError("正在处理中，请稍候");
     return;
   }
 
   // 第一步：先转录，再生成纪要
   QFile file(filePath);
-  if (!file.exists() || !file.open(QIODevice::ReadOnly)) {
+  if (!file.exists() || !file.open(QIODevice::ReadOnly))
+  {
     setError("无法读取录音文件");
     return;
   }
@@ -586,7 +647,8 @@ void AIAssistant::generateMinutesFromFile(const QString &filePath) {
   QByteArray postData = QJsonDocument(body).toJson(QJsonDocument::Compact);
   QNetworkReply *reply = m_networkManager->post(request, postData);
 
-  connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+  connect(reply, &QNetworkReply::finished, this, [this, reply]()
+          {
     reply->deleteLater();
     m_isTranscribing = false;
     emit transcribingChanged();
@@ -632,12 +694,13 @@ void AIAssistant::generateMinutesFromFile(const QString &filePath) {
                   } else {
                     setError(json["error"].toString("会议纪要生成失败"));
                   }
-                });
-  });
+                }); });
 }
 
-void AIAssistant::deleteLocalRecording(int index) {
-  if (index < 0 || index >= m_localRecordings.size()) {
+void AIAssistant::deleteLocalRecording(int index)
+{
+  if (index < 0 || index >= m_localRecordings.size())
+  {
     return;
   }
 
@@ -655,12 +718,14 @@ void AIAssistant::deleteLocalRecording(int index) {
   loadLocalRecordings();
 }
 
-void AIAssistant::loadLocalRecordings() {
+void AIAssistant::loadLocalRecordings()
+{
   QSettings settings("MeetingApp", "Recordings");
   int count = settings.beginReadArray("recordings");
 
   m_localRecordings.clear();
-  for (int i = 0; i < count; ++i) {
+  for (int i = 0; i < count; ++i)
+  {
     settings.setArrayIndex(i);
     QString filePath = settings.value("filePath").toString();
 
@@ -677,6 +742,8 @@ void AIAssistant::loadLocalRecordings() {
     map["dateTime"] = settings.value("dateTime").toString();
     map["durationSec"] = settings.value("durationSec").toInt();
     map["fileSize"] = settings.value("fileSize").toLongLong();
+    // 录制类型: "audio" 或 "video"（兼容旧数据默认 audio）
+    map["recordType"] = settings.value("recordType", "audio").toString();
 
     // 格式化时长
     int dur = map["durationSec"].toInt();
@@ -697,7 +764,7 @@ void AIAssistant::loadLocalRecordings() {
   settings.endArray();
 
   emit localRecordingsChanged();
-  qDebug() << "[AIAssistant] 加载本地录音列表:" << m_localRecordings.size()
+  qDebug() << "[AIAssistant] 加载本地录制列表:" << m_localRecordings.size()
            << "条";
 }
 
@@ -705,13 +772,16 @@ void AIAssistant::saveRecordingMeta(const QString &filePath,
                                     const QString &meetingTitle,
                                     const QString &roomName,
                                     const QString &userName, int durationSec,
-                                    qint64 fileSize) {
+                                    qint64 fileSize,
+                                    const QString &recordType)
+{
   QSettings settings("MeetingApp", "Recordings");
 
   // 读取现有列表
   int count = settings.beginReadArray("recordings");
   QList<QVariantMap> existing;
-  for (int i = 0; i < count; ++i) {
+  for (int i = 0; i < count; ++i)
+  {
     settings.setArrayIndex(i);
     QVariantMap m;
     m["filePath"] = settings.value("filePath");
@@ -721,6 +791,7 @@ void AIAssistant::saveRecordingMeta(const QString &filePath,
     m["dateTime"] = settings.value("dateTime");
     m["durationSec"] = settings.value("durationSec");
     m["fileSize"] = settings.value("fileSize");
+    m["recordType"] = settings.value("recordType", "audio");
     existing.append(m);
   }
   settings.endArray();
@@ -735,11 +806,13 @@ void AIAssistant::saveRecordingMeta(const QString &filePath,
       QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss");
   newEntry["durationSec"] = durationSec;
   newEntry["fileSize"] = fileSize;
+  newEntry["recordType"] = recordType;
   existing.append(newEntry);
 
   // 写回
   settings.beginWriteArray("recordings", existing.size());
-  for (int i = 0; i < existing.size(); ++i) {
+  for (int i = 0; i < existing.size(); ++i)
+  {
     settings.setArrayIndex(i);
     const auto &m = existing[i];
     settings.setValue("filePath", m["filePath"]);
@@ -749,17 +822,20 @@ void AIAssistant::saveRecordingMeta(const QString &filePath,
     settings.setValue("dateTime", m["dateTime"]);
     settings.setValue("durationSec", m["durationSec"]);
     settings.setValue("fileSize", m["fileSize"]);
+    settings.setValue("recordType", m["recordType"]);
   }
   settings.endArray();
   settings.sync();
 }
 
-void AIAssistant::removeRecordingMeta(int index) {
+void AIAssistant::removeRecordingMeta(int index)
+{
   QSettings settings("MeetingApp", "Recordings");
 
   int count = settings.beginReadArray("recordings");
   QList<QVariantMap> existing;
-  for (int i = 0; i < count; ++i) {
+  for (int i = 0; i < count; ++i)
+  {
     settings.setArrayIndex(i);
     QVariantMap m;
     m["filePath"] = settings.value("filePath");
@@ -769,16 +845,19 @@ void AIAssistant::removeRecordingMeta(int index) {
     m["dateTime"] = settings.value("dateTime");
     m["durationSec"] = settings.value("durationSec");
     m["fileSize"] = settings.value("fileSize");
+    m["recordType"] = settings.value("recordType", "audio");
     existing.append(m);
   }
   settings.endArray();
 
-  if (index >= 0 && index < existing.size()) {
+  if (index >= 0 && index < existing.size())
+  {
     existing.removeAt(index);
   }
 
   settings.beginWriteArray("recordings", existing.size());
-  for (int i = 0; i < existing.size(); ++i) {
+  for (int i = 0; i < existing.size(); ++i)
+  {
     settings.setArrayIndex(i);
     const auto &m = existing[i];
     settings.setValue("filePath", m["filePath"]);
@@ -788,15 +867,37 @@ void AIAssistant::removeRecordingMeta(int index) {
     settings.setValue("dateTime", m["dateTime"]);
     settings.setValue("durationSec", m["durationSec"]);
     settings.setValue("fileSize", m["fileSize"]);
+    settings.setValue("recordType", m["recordType"]);
   }
   settings.endArray();
   settings.sync();
 }
 
+void AIAssistant::saveVideoRecordingMeta(const QString &filePath,
+                                         const QString &meetingTitle,
+                                         int durationSec)
+{
+  QFileInfo fi(filePath);
+  if (!fi.exists())
+  {
+    qWarning() << "[AIAssistant] 视频文件不存在:" << filePath;
+    return;
+  }
+
+  saveRecordingMeta(filePath, meetingTitle, meetingTitle, m_userName,
+                    durationSec, fi.size(), "video");
+  loadLocalRecordings();
+
+  qDebug() << "[AIAssistant] 视频录制元数据已保存:" << filePath
+           << "时长:" << durationSec << "秒"
+           << "大小:" << fi.size();
+}
+
 // ==================== WAV 文件组装 ====================
 
 QByteArray AIAssistant::buildWavFile(const QByteArray &pcmData, int sampleRate,
-                                     int channels, int bitsPerSample) const {
+                                     int channels, int bitsPerSample) const
+{
   // WAV 文件头结构（44 字节）
   int dataSize = pcmData.size();
   int byteRate = sampleRate * channels * bitsPerSample / 8;
@@ -838,7 +939,8 @@ QByteArray AIAssistant::buildWavFile(const QByteArray &pcmData, int sampleRate,
 
 void AIAssistant::postRequest(
     const QString &endpoint, const QJsonObject &body,
-    std::function<void(bool, const QJsonObject &)> callback) {
+    std::function<void(bool, const QJsonObject &)> callback)
+{
   QUrl url(m_serverUrl + endpoint);
   QNetworkRequest request(url);
   request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
@@ -847,7 +949,8 @@ void AIAssistant::postRequest(
   QByteArray postData = QJsonDocument(body).toJson(QJsonDocument::Compact);
   QNetworkReply *reply = m_networkManager->post(request, postData);
 
-  connect(reply, &QNetworkReply::finished, this, [reply, callback]() {
+  connect(reply, &QNetworkReply::finished, this, [reply, callback]()
+          {
     reply->deleteLater();
 
     if (reply->error() != QNetworkReply::NoError) {
@@ -862,21 +965,23 @@ void AIAssistant::postRequest(
     QJsonObject json = doc.object();
 
     bool success = json["success"].toBool(false);
-    callback(success, json);
-  });
+    callback(success, json); });
 }
 
 // ==================== 工具方法 ====================
 
-void AIAssistant::setError(const QString &error) {
+void AIAssistant::setError(const QString &error)
+{
   m_lastError = error;
   emit lastErrorChanged();
   emit aiError(error);
   qWarning() << "[AIAssistant] 错误:" << error;
 }
 
-void AIAssistant::setBusy(bool busy) {
-  if (m_isBusy != busy) {
+void AIAssistant::setBusy(bool busy)
+{
+  if (m_isBusy != busy)
+  {
     m_isBusy = busy;
     emit busyChanged();
   }

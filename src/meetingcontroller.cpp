@@ -1,7 +1,11 @@
 #include "meetingcontroller.h"
 #include "livekitmanager.h"
+#include "meetingrecorder.h"
+#include "videocompositor.h"
 #include <QClipboard>
+#include <QDateTime>
 #include <QDebug>
+#include <QDir>
 #include <QGuiApplication>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -10,6 +14,7 @@
 #include <QNetworkRequest>
 #include <QRandomGenerator>
 #include <QSettings>
+#include <QStandardPaths>
 #include <QTimer>
 
 MeetingController::MeetingController(QObject *parent)
@@ -19,8 +24,22 @@ MeetingController::MeetingController(QObject *parent)
       m_durationTimer(new QTimer(this)),
       m_liveKitManager(new LiveKitManager(this)) // 创建 LiveKit 管理器
 {
+  // 创建视频录制组件
+  m_videoCompositor = new VideoCompositor(this);
+  m_meetingRecorder = new MeetingRecorder(this);
+
   connect(m_durationTimer, &QTimer::timeout, this,
           &MeetingController::updateMeetingDuration);
+
+  // VideoCompositor → MeetingRecorder
+  connect(m_videoCompositor, &VideoCompositor::compositeFrameReady,
+          m_meetingRecorder, &MeetingRecorder::feedVideoFrame);
+
+  // MeetingRecorder 信号转发
+  connect(m_meetingRecorder, &MeetingRecorder::recordingChanged, this,
+          &MeetingController::videoRecordingChanged);
+  connect(m_meetingRecorder, &MeetingRecorder::durationChanged, this,
+          &MeetingController::videoRecordingDurationChanged);
 
   // 设置 LiveKit 信号连接
   setupLiveKitConnections();
@@ -28,8 +47,10 @@ MeetingController::MeetingController(QObject *parent)
   qDebug() << "[MeetingController] 初始化完成，LiveKit 管理器已创建";
 }
 
-MeetingController::~MeetingController() {
-  if (m_durationTimer->isActive()) {
+MeetingController::~MeetingController()
+{
+  if (m_durationTimer->isActive())
+  {
     m_durationTimer->stop();
   }
 }
@@ -47,24 +68,47 @@ QString MeetingController::meetingTitle() const { return m_meetingTitle; }
 int MeetingController::participantCount() const { return m_participantCount; }
 
 // 新增：连接状态 Getter
-bool MeetingController::isConnecting() const {
+bool MeetingController::isConnecting() const
+{
   return m_liveKitManager->isConnecting();
 }
-bool MeetingController::isConnected() const {
+bool MeetingController::isConnected() const
+{
   return m_liveKitManager->isConnected();
 }
 
 // 获取 LiveKitManager 指针
-LiveKitManager *MeetingController::liveKitManager() const {
+LiveKitManager *MeetingController::liveKitManager() const
+{
   return m_liveKitManager;
 }
 
-QString MeetingController::meetingDuration() const {
+// 视频录制 Getter
+bool MeetingController::isVideoRecording() const
+{
+  return m_meetingRecorder->isRecording();
+}
+int MeetingController::videoRecordingDuration() const
+{
+  return m_meetingRecorder->durationSeconds();
+}
+VideoCompositor *MeetingController::videoCompositor() const
+{
+  return m_videoCompositor;
+}
+MeetingRecorder *MeetingController::meetingRecorder() const
+{
+  return m_meetingRecorder;
+}
+
+QString MeetingController::meetingDuration() const
+{
   int hours = m_meetingSeconds / 3600;
   int minutes = (m_meetingSeconds % 3600) / 60;
   int seconds = m_meetingSeconds % 60;
 
-  if (hours > 0) {
+  if (hours > 0)
+  {
     return QString("%1:%2:%3")
         .arg(hours, 2, 10, QChar('0'))
         .arg(minutes, 2, 10, QChar('0'))
@@ -76,26 +120,35 @@ QString MeetingController::meetingDuration() const {
 }
 
 // Setter实现
-void MeetingController::setMicOn(bool on) {
-  if (m_isMicOn != on) {
+void MeetingController::setMicOn(bool on)
+{
+  if (m_isMicOn != on)
+  {
     m_isMicOn = on;
     emit micOnChanged();
     emit showMessage(on ? "麦克风已开启" : "麦克风已关闭");
 
     // 同步到 LiveKit
-    if (m_liveKitManager) {
-      if (on) {
+    if (m_liveKitManager)
+    {
+      if (on)
+      {
         // 开启麦克风并发布
-        if (m_liveKitManager->isConnected()) {
+        if (m_liveKitManager->isConnected())
+        {
           m_liveKitManager->publishMicrophone();
         }
-      } else {
+      }
+      else
+      {
         // 取消发布并停止麦克风
-        if (m_liveKitManager->isConnected()) {
+        if (m_liveKitManager->isConnected())
+        {
           m_liveKitManager->unpublishMicrophone();
         }
         // 无论是否连接，都停止本地麦克风
-        if (m_liveKitManager->mediaCapture()) {
+        if (m_liveKitManager->mediaCapture())
+        {
           m_liveKitManager->mediaCapture()->stopMicrophone();
         }
       }
@@ -103,26 +156,35 @@ void MeetingController::setMicOn(bool on) {
   }
 }
 
-void MeetingController::setCameraOn(bool on) {
-  if (m_isCameraOn != on) {
+void MeetingController::setCameraOn(bool on)
+{
+  if (m_isCameraOn != on)
+  {
     m_isCameraOn = on;
     emit cameraOnChanged();
     emit showMessage(on ? "摄像头已开启" : "摄像头已关闭");
 
     // 同步到 LiveKit
-    if (m_liveKitManager) {
-      if (on) {
+    if (m_liveKitManager)
+    {
+      if (on)
+      {
         // 开启摄像头并发布
-        if (m_liveKitManager->isConnected()) {
+        if (m_liveKitManager->isConnected())
+        {
           m_liveKitManager->publishCamera();
         }
-      } else {
+      }
+      else
+      {
         // 取消发布并停止摄像头
-        if (m_liveKitManager->isConnected()) {
+        if (m_liveKitManager->isConnected())
+        {
           m_liveKitManager->unpublishCamera();
         }
         // 无论是否连接，都停止本地摄像头
-        if (m_liveKitManager->mediaCapture()) {
+        if (m_liveKitManager->mediaCapture())
+        {
           m_liveKitManager->mediaCapture()->stopCamera();
         }
       }
@@ -130,79 +192,103 @@ void MeetingController::setCameraOn(bool on) {
   }
 }
 
-void MeetingController::setScreenSharing(bool sharing) {
-  if (m_isScreenSharing != sharing) {
+void MeetingController::setScreenSharing(bool sharing)
+{
+  if (m_isScreenSharing != sharing)
+  {
     m_isScreenSharing = sharing;
     emit screenSharingChanged();
 
     // 同步到 LiveKit
-    if (m_liveKitManager && m_liveKitManager->isConnected()) {
-      if (sharing) {
+    if (m_liveKitManager && m_liveKitManager->isConnected())
+    {
+      if (sharing)
+      {
         m_liveKitManager->publishScreenShare();
         emit showMessage("屏幕共享已开始");
-      } else {
+      }
+      else
+      {
         m_liveKitManager->unpublishScreenShare();
         emit showMessage("屏幕共享已结束");
       }
-    } else {
+    }
+    else
+    {
       emit showMessage(sharing ? "请先加入会议再开启屏幕共享"
                                : "屏幕共享已结束");
     }
   }
 }
 
-void MeetingController::setRecording(bool recording) {
-  if (m_isRecording != recording) {
+void MeetingController::setRecording(bool recording)
+{
+  if (m_isRecording != recording)
+  {
     m_isRecording = recording;
     emit recordingChanged();
     emit showMessage(recording ? "录制已开始" : "录制已停止");
   }
 }
 
-void MeetingController::setHandRaised(bool raised) {
-  if (m_isHandRaised != raised) {
+void MeetingController::setHandRaised(bool raised)
+{
+  if (m_isHandRaised != raised)
+  {
     m_isHandRaised = raised;
     emit handRaisedChanged();
     emit showMessage(raised ? "已举手" : "已放下手");
   }
 }
 
-void MeetingController::setInMeeting(bool inMeeting) {
-  if (m_isInMeeting != inMeeting) {
+void MeetingController::setInMeeting(bool inMeeting)
+{
+  if (m_isInMeeting != inMeeting)
+  {
     m_isInMeeting = inMeeting;
     emit inMeetingChanged();
 
-    if (inMeeting) {
+    if (inMeeting)
+    {
       startDurationTimer();
-    } else {
+    }
+    else
+    {
       stopDurationTimer();
     }
   }
 }
 
-void MeetingController::setMeetingId(const QString &id) {
-  if (m_meetingId != id) {
+void MeetingController::setMeetingId(const QString &id)
+{
+  if (m_meetingId != id)
+  {
     m_meetingId = id;
     emit meetingIdChanged();
   }
 }
 
-void MeetingController::setUserName(const QString &name) {
-  if (m_userName != name) {
+void MeetingController::setUserName(const QString &name)
+{
+  if (m_userName != name)
+  {
     m_userName = name;
     emit userNameChanged();
   }
 }
 
-void MeetingController::setMeetingTitle(const QString &title) {
-  if (m_meetingTitle != title) {
+void MeetingController::setMeetingTitle(const QString &title)
+{
+  if (m_meetingTitle != title)
+  {
     m_meetingTitle = title;
     emit meetingTitleChanged();
   }
 }
 
 // 会议控制实现
-void MeetingController::createMeeting(const QString &title) {
+void MeetingController::createMeeting(const QString &title)
+{
   qDebug() << "[MeetingController] 创建会议:" << title;
 
   // 生成随机会议ID（作为房间名）
@@ -219,12 +305,14 @@ void MeetingController::createMeeting(const QString &title) {
 }
 
 void MeetingController::joinMeeting(const QString &meetingId,
-                                    const QString &password) {
+                                    const QString &password)
+{
   Q_UNUSED(password)
 
   qDebug() << "[MeetingController] 加入会议:" << meetingId;
 
-  if (meetingId.isEmpty()) {
+  if (meetingId.isEmpty())
+  {
     emit errorOccurred("请输入会议号");
     return;
   }
@@ -238,11 +326,13 @@ void MeetingController::joinMeeting(const QString &meetingId,
   emit showMessage("正在加入会议...");
 }
 
-void MeetingController::leaveMeeting() {
+void MeetingController::leaveMeeting()
+{
   qDebug() << "[MeetingController] 离开会议" << m_meetingId;
 
   // 通知服务器更新会议时长
-  if (!m_meetingId.isEmpty() && m_liveKitManager) {
+  if (!m_meetingId.isEmpty() && m_liveKitManager)
+  {
     QUrl url(m_liveKitManager->tokenServerUrl() + "/api/meeting/leave");
     QNetworkRequest request(url);
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
@@ -252,27 +342,35 @@ void MeetingController::leaveMeeting() {
     auto *nam = new QNetworkAccessManager(this);
     auto *reply =
         nam->post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
-    connect(reply, &QNetworkReply::finished, this, [reply, nam]() {
+    connect(reply, &QNetworkReply::finished, this, [reply, nam]()
+            {
       qDebug() << "[MeetingController] 会议时长已更新";
       reply->deleteLater();
-      nam->deleteLater();
-    });
+      nam->deleteLater(); });
   }
 
   // 【重要】先重置媒体状态（在断开连接之前）
   // 这样可以避免在断开后尝试 unpublish 导致的问题
   // 直接设置成员变量，不触发 setCameraOn/setMicOn 的副作用
-  if (m_isCameraOn) {
+  if (m_isCameraOn)
+  {
     m_isCameraOn = false;
     emit cameraOnChanged();
   }
-  if (m_isMicOn) {
+  if (m_isMicOn)
+  {
     m_isMicOn = false;
     emit micOnChanged();
   }
 
   // 然后离开 LiveKit 房间（会停止摄像头和麦克风）
   m_liveKitManager->leaveRoom();
+
+  // 停止视频录制
+  if (m_meetingRecorder->isRecording())
+  {
+    stopVideoRecording();
+  }
 
   setInMeeting(false);
   setScreenSharing(false);
@@ -288,7 +386,8 @@ void MeetingController::leaveMeeting() {
   emit showMessage("已离开会议");
 }
 
-void MeetingController::endMeeting() {
+void MeetingController::endMeeting()
+{
   emit showMessage("会议已结束");
   leaveMeeting();
   emit meetingEnded();
@@ -299,7 +398,8 @@ void MeetingController::toggleMic() { setMicOn(!m_isMicOn); }
 
 void MeetingController::toggleCamera() { setCameraOn(!m_isCameraOn); }
 
-void MeetingController::toggleScreenShare() {
+void MeetingController::toggleScreenShare()
+{
   setScreenSharing(!m_isScreenSharing);
 }
 
@@ -308,7 +408,8 @@ void MeetingController::toggleRecording() { setRecording(!m_isRecording); }
 void MeetingController::toggleHandRaise() { setHandRaised(!m_isHandRaised); }
 
 // 其他功能实现
-void MeetingController::inviteParticipants() {
+void MeetingController::inviteParticipants()
+{
   QString inviteText = QString("%1").arg(m_meetingId);
 
   QClipboard *clipboard = QGuiApplication::clipboard();
@@ -319,7 +420,8 @@ void MeetingController::inviteParticipants() {
 
 void MeetingController::openSettings() { emit showMessage("打开设置"); }
 
-void MeetingController::copyMeetingInfo() {
+void MeetingController::copyMeetingInfo()
+{
   QString info = QString("会议号：%1").arg(m_meetingId);
 
   QClipboard *clipboard = QGuiApplication::clipboard();
@@ -328,20 +430,24 @@ void MeetingController::copyMeetingInfo() {
   emit showMessage("会议信息已复制");
 }
 
-void MeetingController::copyToClipboard(const QString &text) {
+void MeetingController::copyToClipboard(const QString &text)
+{
   QClipboard *clipboard = QGuiApplication::clipboard();
   clipboard->setText(text);
   emit showMessage("已复制到剪贴板");
 }
 
-void MeetingController::switchView(const QString &viewType) {
+void MeetingController::switchView(const QString &viewType)
+{
   emit showMessage("切换到" + viewType + "视图");
 }
 
 void MeetingController::login(const QString &username,
-                              const QString &password) {
+                              const QString &password)
+{
   // 存储用户名和密码
-  if (username.isEmpty() || password.isEmpty()) {
+  if (username.isEmpty() || password.isEmpty())
+  {
     emit loginFailed("用户名或密码不能为空");
     return;
   }
@@ -355,13 +461,16 @@ void MeetingController::login(const QString &username,
 }
 
 void MeetingController::registerUser(const QString &username,
-                                     const QString &password) {
+                                     const QString &password)
+{
   qDebug() << "[MeetingController] 用户注册:" << username;
   m_liveKitManager->registerUser(username, password);
 }
 
-void MeetingController::logout() {
-  if (m_isInMeeting) {
+void MeetingController::logout()
+{
+  if (m_isInMeeting)
+  {
     leaveMeeting();
   }
   setUserName("");
@@ -371,7 +480,8 @@ void MeetingController::logout() {
 // ==================== 保存密码功能 ====================
 
 void MeetingController::saveCredentials(const QString &username,
-                                        const QString &password) {
+                                        const QString &password)
+{
   QSettings settings("MeetingApp", "Credentials");
   settings.setValue("username", username);
   settings.setValue("password", password);
@@ -379,7 +489,8 @@ void MeetingController::saveCredentials(const QString &username,
   qDebug() << "[MeetingController] 凭据已保存";
 }
 
-void MeetingController::clearSavedCredentials() {
+void MeetingController::clearSavedCredentials()
+{
   QSettings settings("MeetingApp", "Credentials");
   settings.remove("username");
   settings.remove("password");
@@ -387,42 +498,50 @@ void MeetingController::clearSavedCredentials() {
   qDebug() << "[MeetingController] 凭据已清除";
 }
 
-QString MeetingController::getSavedUsername() const {
+QString MeetingController::getSavedUsername() const
+{
   QSettings settings("MeetingApp", "Credentials");
   return settings.value("username", "").toString();
 }
 
-QString MeetingController::getSavedPassword() const {
+QString MeetingController::getSavedPassword() const
+{
   QSettings settings("MeetingApp", "Credentials");
   return settings.value("password", "").toString();
 }
 
-bool MeetingController::hasRememberedPassword() const {
+bool MeetingController::hasRememberedPassword() const
+{
   QSettings settings("MeetingApp", "Credentials");
   return settings.value("remembered", false).toBool();
 }
 
-void MeetingController::updateMeetingDuration() {
+void MeetingController::updateMeetingDuration()
+{
   m_meetingSeconds++;
   emit meetingDurationChanged();
 }
 
-void MeetingController::startDurationTimer() {
+void MeetingController::startDurationTimer()
+{
   m_meetingSeconds = 0;
   m_durationTimer->start(1000);
 }
 
-void MeetingController::stopDurationTimer() {
+void MeetingController::stopDurationTimer()
+{
   m_durationTimer->stop();
   m_meetingSeconds = 0;
 }
 
 // ==================== LiveKit 信号连接设置 ====================
 
-void MeetingController::setupLiveKitConnections() {
+void MeetingController::setupLiveKitConnections()
+{
   // 连接状态变化
   connect(m_liveKitManager, &LiveKitManager::connectionStateChanged, this,
-          [this]() {
+          [this]()
+          {
             emit connectingChanged();
             emit connectedChanged();
           });
@@ -440,19 +559,21 @@ void MeetingController::setupLiveKitConnections() {
           &MeetingController::onLiveKitError);
 
   // 注册结果处理
-  connect(m_liveKitManager, &LiveKitManager::registerSuccess, this, [this]() {
+  connect(m_liveKitManager, &LiveKitManager::registerSuccess, this, [this]()
+          {
     emit registerSuccess();
-    emit showMessage("注册成功！请登录");
-  });
+    emit showMessage("注册成功！请登录"); });
   connect(m_liveKitManager, &LiveKitManager::registerFailed, this,
-          [this](const QString &error) {
+          [this](const QString &error)
+          {
             emit registerFailed(error);
             emit showMessage("注册失败: " + error);
           });
 
   // 登录结果处理（后端验证）
   connect(m_liveKitManager, &LiveKitManager::loginSuccess, this,
-          [this](const QString &username) {
+          [this](const QString &username)
+          {
             // 后端验证成功，设置用户凭据
             setUserName(m_pendingUsername);
             m_userPassword = m_pendingPassword;
@@ -466,7 +587,8 @@ void MeetingController::setupLiveKitConnections() {
             emit showMessage("登录成功，欢迎 " + username);
           });
   connect(m_liveKitManager, &LiveKitManager::loginFailed, this,
-          [this](const QString &error) {
+          [this](const QString &error)
+          {
             // 清空待验证凭据
             m_pendingUsername.clear();
             m_pendingPassword.clear();
@@ -480,7 +602,8 @@ void MeetingController::setupLiveKitConnections() {
 
 // ==================== LiveKit 事件处理槽 ====================
 
-void MeetingController::onLiveKitConnected() {
+void MeetingController::onLiveKitConnected()
+{
   qDebug() << "[MeetingController] LiveKit 连接成功，进入会议";
 
   setInMeeting(true);
@@ -490,11 +613,14 @@ void MeetingController::onLiveKitConnected() {
   emit participantCountChanged();
 
   // 发送相应的信号
-  if (m_meetingTitle.contains("的会议")) {
+  if (m_meetingTitle.contains("的会议"))
+  {
     // 这是创建的会议
     emit meetingCreated(m_meetingId);
     emit showMessage("会议已创建，会议号：" + m_meetingId);
-  } else {
+  }
+  else
+  {
     // 这是加入的会议
     emit meetingJoined();
     emit showMessage("已成功加入会议");
@@ -502,28 +628,94 @@ void MeetingController::onLiveKitConnected() {
 
   // 【关键】连接成功后，根据用户入会前设置的状态来开启摄像头/麦克风
   // 因为 setCameraOn/setMicOn 在未连接时不会发布轨道
-  if (m_isCameraOn) {
+  if (m_isCameraOn)
+  {
     qDebug() << "[MeetingController] 连接成功后自动开启摄像头";
     m_liveKitManager->publishCamera();
   }
 
-  if (m_isMicOn) {
+  if (m_isMicOn)
+  {
     qDebug() << "[MeetingController] 连接成功后自动开启麦克风";
     m_liveKitManager->publishMicrophone();
   }
 }
 
-void MeetingController::onLiveKitDisconnected() {
+void MeetingController::onLiveKitDisconnected()
+{
   qDebug() << "[MeetingController] LiveKit 连接断开";
 
-  if (m_isInMeeting) {
+  if (m_isInMeeting)
+  {
     setInMeeting(false);
     emit showMessage("与服务器的连接已断开");
   }
 }
 
-void MeetingController::onLiveKitError(const QString &error) {
+void MeetingController::onLiveKitError(const QString &error)
+{
   qWarning() << "[MeetingController] LiveKit 错误:" << error;
   emit errorOccurred(error);
   emit showMessage("连接错误: " + error);
+}
+
+// ==================== 视频录制控制 ====================
+
+void MeetingController::startVideoRecording()
+{
+  if (m_meetingRecorder->isRecording())
+  {
+    qDebug() << "[MeetingController] 已在录制中";
+    return;
+  }
+
+  // 生成输出路径: 文档目录/MeetingApp/meeting_<roomId>_<timestamp>.mp4
+  QString docDir =
+      QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+  QString outputDir = docDir + "/MeetingApp/recordings";
+  QDir().mkpath(outputDir);
+
+  QString timestamp =
+      QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss");
+  QString fileName =
+      QString("meeting_%1_%2.mp4").arg(m_meetingId, timestamp);
+  QString outputPath = outputDir + "/" + fileName;
+
+  // 启动合成器
+  m_videoCompositor->start();
+
+  // 启动录制器
+  if (!m_meetingRecorder->startRecording(outputPath))
+  {
+    m_videoCompositor->stop();
+    emit showMessage("视频录制启动失败");
+    return;
+  }
+
+  qDebug() << "[MeetingController] 视频录制开始:" << outputPath;
+  emit showMessage("视频录制已开始");
+}
+
+void MeetingController::stopVideoRecording()
+{
+  if (!m_meetingRecorder->isRecording())
+    return;
+
+  m_meetingRecorder->stopRecording();
+  m_videoCompositor->stop();
+
+  qDebug() << "[MeetingController] 视频录制已停止";
+  emit showMessage("视频录制已停止");
+}
+
+void MeetingController::toggleVideoRecording()
+{
+  if (m_meetingRecorder->isRecording())
+  {
+    stopVideoRecording();
+  }
+  else
+  {
+    startVideoRecording();
+  }
 }

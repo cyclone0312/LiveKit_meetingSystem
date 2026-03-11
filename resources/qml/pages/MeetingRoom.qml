@@ -219,6 +219,7 @@ Page {
         onToggleCamera: meetingController.toggleCamera()
         onToggleScreenShare: meetingController.toggleScreenShare()
         onToggleRecord: meetingController.toggleRecording()
+        onToggleVideoRecord: meetingController.toggleVideoRecording()
         onToggleHandRaise: meetingController.toggleHandRaise()
         
         onToggleParticipants: {

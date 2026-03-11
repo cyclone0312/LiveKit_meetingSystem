@@ -11,6 +11,7 @@ Rectangle {
     signal toggleCamera()
     signal toggleScreenShare()
     signal toggleRecord()
+    signal toggleVideoRecord()
     signal toggleHandRaise()
     signal toggleParticipants()
     signal toggleChat()
@@ -55,13 +56,24 @@ Rectangle {
                 onClicked: toggleScreenShare()
             }
             
-            // 录制按钮
+            // 录制按钮（AI 音频录制）
             MeetingButton {
                 iconText: meetingController.isRecording ? "⏺" : "⏺"
                 labelText: meetingController.isRecording ? "停止录制" : "录制"
                 isActive: meetingController.isRecording
                 activeColor: "#F44336"
                 onClicked: toggleRecord()
+            }
+            
+            // 视频录制按钮
+            MeetingButton {
+                iconText: meetingController.isVideoRecording ? "🔴" : "📹"
+                labelText: meetingController.isVideoRecording
+                    ? "停止(" + meetingController.videoRecordingDuration + "s)"
+                    : "录制视频"
+                isActive: meetingController.isVideoRecording
+                activeColor: "#E91E63"
+                onClicked: toggleVideoRecord()
             }
         }
         

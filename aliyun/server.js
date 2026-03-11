@@ -137,7 +137,8 @@ async function submitASRTask(fileUrl) {
         },
         parameters: {
             language_hints: ['zh', 'en'],
-            disfluency_removal_enabled: true   // 过滤语气词，让转录更干净
+            disfluency_removal_enabled: true,   // 过滤语气词，让转录更干净
+            speaker_count: -1                    // 自动检测说话人数量，启用说话人分离
         }
     });
 
@@ -275,10 +276,24 @@ async function extractTranscriptText(results) {
         const transcriptJson = await fetchUrl(transcriptionUrl);
         const transcriptData = JSON.parse(transcriptJson);
 
-        // 提取文本：transcripts[].text
+        // 提取文本：优先使用带说话人标签的句子级结果
         if (transcriptData.transcripts && Array.isArray(transcriptData.transcripts)) {
             for (const t of transcriptData.transcripts) {
-                if (t.text) {
+                // 如果有句子级结果且包含说话人标签，使用它们
+                if (t.sentences && Array.isArray(t.sentences)) {
+                    let lastSpeaker = null;
+                    for (const s of t.sentences) {
+                        const speaker = s.speaker_id !== undefined && s.speaker_id !== null
+                            ? `发言人${s.speaker_id}` : null;
+                        if (speaker && speaker !== lastSpeaker) {
+                            fullText += `\n[${speaker}]: `;
+                            lastSpeaker = speaker;
+                        }
+                        fullText += (s.text || '') + ' ';
+                    }
+                    fullText += '\n';
+                } else if (t.text) {
+                    // 回退：没有句子级结果时使用整段文本
                     fullText += t.text + '\n';
                 }
             }

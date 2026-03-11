@@ -18,7 +18,8 @@
 // =============================================================================
 
 ScreenCapture::ScreenCapture(QObject *parent)
-    : QObject(parent), m_captureTimer(std::make_unique<QTimer>(this)) {
+    : QObject(parent), m_captureTimer(std::make_unique<QTimer>(this))
+{
   qDebug() << "[ScreenCapture] 初始化中...";
 
   // 刷新屏幕列表
@@ -38,12 +39,14 @@ ScreenCapture::ScreenCapture(QObject *parent)
   qDebug() << "[ScreenCapture] 初始化完成";
 }
 
-ScreenCapture::~ScreenCapture() {
+ScreenCapture::~ScreenCapture()
+{
   stopCapture();
   qDebug() << "[ScreenCapture] 已销毁";
 }
 
-void ScreenCapture::refreshScreens() {
+void ScreenCapture::refreshScreens()
+{
   m_screens.clear();
 
 #ifdef Q_OS_WIN
@@ -51,18 +54,21 @@ void ScreenCapture::refreshScreens() {
   int index = 0;
   EnumDisplayMonitors(
       nullptr, nullptr,
-      [](HMONITOR hMonitor, HDC, LPRECT, LPARAM lParam) -> BOOL {
+      [](HMONITOR hMonitor, HDC, LPRECT, LPARAM lParam) -> BOOL
+      {
         auto screens = reinterpret_cast<QList<ScreenInfo> *>(lParam);
         MONITORINFOEX info;
         info.cbSize = sizeof(MONITORINFOEX);
-        if (GetMonitorInfo(hMonitor, &info)) {
+        if (GetMonitorInfo(hMonitor, &info))
+        {
           ScreenInfo screen;
           screen.index = screens->size();
           screen.name = QString("显示器 %1").arg(screens->size() + 1);
           screen.width = info.rcMonitor.right - info.rcMonitor.left;
           screen.height = info.rcMonitor.bottom - info.rcMonitor.top;
           screen.isPrimary = (info.dwFlags & MONITORINFOF_PRIMARY) != 0;
-          if (screen.isPrimary) {
+          if (screen.isPrimary)
+          {
             screen.name += " (主屏幕)";
           }
           screens->append(screen);
@@ -73,7 +79,8 @@ void ScreenCapture::refreshScreens() {
 #else
   // 非 Windows 平台使用 Qt 屏幕信息
   const auto screens = QGuiApplication::screens();
-  for (int i = 0; i < screens.size(); ++i) {
+  for (int i = 0; i < screens.size(); ++i)
+  {
     ScreenInfo info;
     info.index = i;
     info.name = screens[i]->name();
@@ -85,16 +92,19 @@ void ScreenCapture::refreshScreens() {
 #endif
 
   qDebug() << "[ScreenCapture] 发现" << m_screens.count() << "个屏幕:";
-  for (const auto &screen : m_screens) {
+  for (const auto &screen : m_screens)
+  {
     qDebug() << "  -" << screen.name << screen.width << "x" << screen.height;
   }
 
   emit screensChanged();
 }
 
-QStringList ScreenCapture::availableScreens() const {
+QStringList ScreenCapture::availableScreens() const
+{
   QStringList list;
-  for (const auto &screen : m_screens) {
+  for (const auto &screen : m_screens)
+  {
     list.append(QString("%1 (%2x%3)")
                     .arg(screen.name)
                     .arg(screen.width)
@@ -103,13 +113,16 @@ QStringList ScreenCapture::availableScreens() const {
   return list;
 }
 
-void ScreenCapture::setCurrentScreenIndex(int index) {
+void ScreenCapture::setCurrentScreenIndex(int index)
+{
   if (index >= 0 && index < m_screens.count() &&
-      m_currentScreenIndex != index) {
+      m_currentScreenIndex != index)
+  {
     m_currentScreenIndex = index;
 
     // 如果正在捕获，重新启动以使用新屏幕
-    if (m_isActive) {
+    if (m_isActive)
+    {
       stopCapture();
       startCapture(index);
     }
@@ -118,8 +131,10 @@ void ScreenCapture::setCurrentScreenIndex(int index) {
   }
 }
 
-void ScreenCapture::setVideoSink(QVideoSink *sink) {
-  if (m_externalVideoSink != sink) {
+void ScreenCapture::setVideoSink(QVideoSink *sink)
+{
+  if (m_externalVideoSink != sink)
+  {
     m_externalVideoSink = sink;
     emit videoSinkChanged();
     qDebug() << "[ScreenCapture] 本地预览 VideoSink 已设置:"
@@ -127,11 +142,13 @@ void ScreenCapture::setVideoSink(QVideoSink *sink) {
   }
 }
 
-std::shared_ptr<livekit::LocalVideoTrack> ScreenCapture::getScreenTrack() {
+std::shared_ptr<livekit::LocalVideoTrack> ScreenCapture::getScreenTrack()
+{
   return m_screenTrack;
 }
 
-void ScreenCapture::resetLiveKitSources() {
+void ScreenCapture::resetLiveKitSources()
+{
   qDebug() << "[ScreenCapture] 重置 LiveKit 源和轨道...";
 
   // 停止捕获
@@ -150,15 +167,18 @@ void ScreenCapture::resetLiveKitSources() {
   qDebug() << "[ScreenCapture] LiveKit 源和轨道重置完成";
 }
 
-void ScreenCapture::startCapture(int screenIndex) {
-  if (m_isActive) {
+void ScreenCapture::startCapture(int screenIndex)
+{
+  if (m_isActive)
+  {
     qDebug() << "[ScreenCapture] 已在捕获中";
     return;
   }
 
   int targetScreen = (screenIndex >= 0) ? screenIndex : m_currentScreenIndex;
 
-  if (targetScreen < 0 || targetScreen >= m_screens.count()) {
+  if (targetScreen < 0 || targetScreen >= m_screens.count())
+  {
     qWarning() << "[ScreenCapture] 无效的屏幕索引:" << targetScreen;
     emit captureError("无效的屏幕索引");
     return;
@@ -167,7 +187,8 @@ void ScreenCapture::startCapture(int screenIndex) {
   qDebug() << "[ScreenCapture] 启动屏幕捕获, 屏幕:" << targetScreen;
 
 #ifdef Q_OS_WIN
-  if (!initializeDXGI(targetScreen)) {
+  if (!initializeDXGI(targetScreen))
+  {
     qWarning() << "[ScreenCapture] DXGI 初始化失败";
     emit captureError("无法初始化屏幕捕获");
     return;
@@ -185,8 +206,10 @@ void ScreenCapture::startCapture(int screenIndex) {
   qDebug() << "[ScreenCapture] 屏幕捕获已启动, FPS:" << CAPTURE_FPS;
 }
 
-void ScreenCapture::stopCapture() {
-  if (!m_isActive) {
+void ScreenCapture::stopCapture()
+{
+  if (!m_isActive)
+  {
     return;
   }
 
@@ -215,8 +238,10 @@ void ScreenCapture::stopCapture() {
   qDebug() << "[ScreenCapture] 屏幕捕获已停止, 共捕获" << m_frameCount << "帧";
 }
 
-void ScreenCapture::onCaptureTimer() {
-  if (!m_isActive) {
+void ScreenCapture::onCaptureTimer()
+{
+  if (!m_isActive)
+  {
     return;
   }
 
@@ -225,7 +250,8 @@ void ScreenCapture::onCaptureTimer() {
 
 #ifdef Q_OS_WIN
 
-bool ScreenCapture::initializeDXGI(int screenIndex) {
+bool ScreenCapture::initializeDXGI(int screenIndex)
+{
   qDebug() << "[ScreenCapture] 初始化 DXGI, 屏幕:" << screenIndex;
 
   HRESULT hr;
@@ -240,7 +266,8 @@ bool ScreenCapture::initializeDXGI(int screenIndex) {
                          D3D11_SDK_VERSION, &m_d3dDevice, nullptr,
                          &m_d3dContext);
 
-  if (FAILED(hr)) {
+  if (FAILED(hr))
+  {
     qWarning() << "[ScreenCapture] D3D11CreateDevice 失败:"
                << QString::number(hr, 16);
     return false;
@@ -249,7 +276,8 @@ bool ScreenCapture::initializeDXGI(int screenIndex) {
   // 获取 DXGI 设备
   ComPtr<IDXGIDevice> dxgiDevice;
   hr = m_d3dDevice.As(&dxgiDevice);
-  if (FAILED(hr)) {
+  if (FAILED(hr))
+  {
     qWarning() << "[ScreenCapture] 获取 DXGI 设备失败";
     return false;
   }
@@ -257,7 +285,8 @@ bool ScreenCapture::initializeDXGI(int screenIndex) {
   // 获取 DXGI 适配器
   ComPtr<IDXGIAdapter> dxgiAdapter;
   hr = dxgiDevice->GetAdapter(&dxgiAdapter);
-  if (FAILED(hr)) {
+  if (FAILED(hr))
+  {
     qWarning() << "[ScreenCapture] 获取 DXGI 适配器失败";
     return false;
   }
@@ -265,14 +294,16 @@ bool ScreenCapture::initializeDXGI(int screenIndex) {
   // 枚举输出（显示器）
   ComPtr<IDXGIOutput> dxgiOutput;
   hr = dxgiAdapter->EnumOutputs(screenIndex, &dxgiOutput);
-  if (FAILED(hr)) {
+  if (FAILED(hr))
+  {
     qWarning() << "[ScreenCapture] 枚举输出失败, 屏幕:" << screenIndex;
     return false;
   }
 
   // 获取输出描述
   hr = dxgiOutput->GetDesc(&m_outputDesc);
-  if (FAILED(hr)) {
+  if (FAILED(hr))
+  {
     qWarning() << "[ScreenCapture] 获取输出描述失败";
     return false;
   }
@@ -294,17 +325,20 @@ bool ScreenCapture::initializeDXGI(int screenIndex) {
   // 获取 IDXGIOutput1 接口
   ComPtr<IDXGIOutput1> dxgiOutput1;
   hr = dxgiOutput.As(&dxgiOutput1);
-  if (FAILED(hr)) {
+  if (FAILED(hr))
+  {
     qWarning() << "[ScreenCapture] 获取 IDXGIOutput1 失败";
     return false;
   }
 
   // 创建桌面复制
   hr = dxgiOutput1->DuplicateOutput(m_d3dDevice.Get(), &m_deskDupl);
-  if (FAILED(hr)) {
+  if (FAILED(hr))
+  {
     qWarning() << "[ScreenCapture] DuplicateOutput 失败:"
                << QString::number(hr, 16);
-    if (hr == DXGI_ERROR_NOT_CURRENTLY_AVAILABLE) {
+    if (hr == DXGI_ERROR_NOT_CURRENTLY_AVAILABLE)
+    {
       qWarning() << "[ScreenCapture] 桌面复制不可用（可能已被其他应用占用）";
     }
     return false;
@@ -322,7 +356,8 @@ bool ScreenCapture::initializeDXGI(int screenIndex) {
   texDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
 
   hr = m_d3dDevice->CreateTexture2D(&texDesc, nullptr, &m_stagingTexture);
-  if (FAILED(hr)) {
+  if (FAILED(hr))
+  {
     qWarning() << "[ScreenCapture] 创建 staging 纹理失败";
     return false;
   }
@@ -331,7 +366,8 @@ bool ScreenCapture::initializeDXGI(int screenIndex) {
   return true;
 }
 
-void ScreenCapture::cleanupDXGI() {
+void ScreenCapture::cleanupDXGI()
+{
   qDebug() << "[ScreenCapture] 清理 DXGI 资源...";
 
   m_stagingTexture.Reset();
@@ -342,15 +378,18 @@ void ScreenCapture::cleanupDXGI() {
   qDebug() << "[ScreenCapture] DXGI 资源已清理";
 }
 
-bool ScreenCapture::captureFrame() {
+bool ScreenCapture::captureFrame()
+{
   // 【关键】首先检查是否仍然处于活跃状态
   // 这可以防止在 stopCapture 期间继续访问 DXGI 资源
-  if (!m_isActive) {
+  if (!m_isActive)
+  {
     return false;
   }
 
   // 检查所有必要的 DXGI 资源是否有效
-  if (!m_deskDupl || !m_screenSource || !m_d3dContext || !m_stagingTexture) {
+  if (!m_deskDupl || !m_screenSource || !m_d3dContext || !m_stagingTexture)
+  {
     return false;
   }
 
@@ -361,13 +400,16 @@ bool ScreenCapture::captureFrame() {
   // 尝试获取下一帧
   hr = m_deskDupl->AcquireNextFrame(0, &frameInfo, &desktopResource);
 
-  if (hr == DXGI_ERROR_WAIT_TIMEOUT) {
+  if (hr == DXGI_ERROR_WAIT_TIMEOUT)
+  {
     // 没有新帧（屏幕内容没变化），不算错误
     return true;
   }
 
-  if (FAILED(hr)) {
-    if (hr == DXGI_ERROR_ACCESS_LOST) {
+  if (FAILED(hr))
+  {
+    if (hr == DXGI_ERROR_ACCESS_LOST)
+    {
       qWarning() << "[ScreenCapture] 访问丢失，需要重新初始化";
       // 清理并标记需要重新初始化
       cleanupDXGI();
@@ -380,7 +422,8 @@ bool ScreenCapture::captureFrame() {
   // 获取桌面纹理
   ComPtr<ID3D11Texture2D> desktopTexture;
   hr = desktopResource.As(&desktopTexture);
-  if (FAILED(hr)) {
+  if (FAILED(hr))
+  {
     m_deskDupl->ReleaseFrame();
     return false;
   }
@@ -391,7 +434,8 @@ bool ScreenCapture::captureFrame() {
   // 映射 staging 纹理以读取像素数据
   D3D11_MAPPED_SUBRESOURCE mapped;
   hr = m_d3dContext->Map(m_stagingTexture.Get(), 0, D3D11_MAP_READ, 0, &mapped);
-  if (FAILED(hr)) {
+  if (FAILED(hr))
+  {
     m_deskDupl->ReleaseFrame();
     return false;
   }
@@ -405,7 +449,8 @@ bool ScreenCapture::captureFrame() {
   const uint8_t *srcData = static_cast<const uint8_t *>(mapped.pData);
   size_t dstRowBytes = m_captureWidth * 4;
 
-  for (int y = 0; y < m_captureHeight; ++y) {
+  for (int y = 0; y < m_captureHeight; ++y)
+  {
     std::memcpy(dstData + y * dstRowBytes, srcData + y * mapped.RowPitch,
                 dstRowBytes);
   }
@@ -422,14 +467,16 @@ bool ScreenCapture::captureFrame() {
                           now.time_since_epoch())
                           .count();
 
-  try {
+  try
+  {
     // 发送到 LiveKit
     m_screenSource->captureFrame(lkFrame, timestamp_us);
     m_frameCount++;
 
     // 【关键】发送到本地预览 VideoSink
     QVideoSink *localSink = m_externalVideoSink.data();
-    if (localSink) {
+    if (localSink)
+    {
       // 从原始数据创建 QImage（BGRA 格式，与 DXGI 输出一致）
       // 【修复】必须使用 copy() 复制数据，否则 lkFrame 销毁后 QImage
       // 数据无效导致崩溃
@@ -438,16 +485,30 @@ bool ScreenCapture::captureFrame() {
       QImage imageCopy = image.copy(); // 创建深拷贝
       QVideoFrame videoFrame(imageCopy);
       localSink->setVideoFrame(videoFrame);
+
+      // 发出屏幕帧信号供 VideoCompositor 使用
+      emit screenFrameReady(imageCopy);
+    }
+    else
+    {
+      // 即使没有本地 sink，也发出帧信号供录制使用
+      QImage image(lkFrame.data(), m_captureWidth, m_captureHeight,
+                   m_captureWidth * 4, QImage::Format_ARGB32);
+      emit screenFrameReady(image.copy());
     }
 
     // 每100帧打印一次日志
-    if (m_frameCount % 100 == 0) {
+    if (m_frameCount % 100 == 0)
+    {
       qDebug() << "[ScreenCapture] 已捕获" << m_frameCount << "帧";
     }
 
     emit frameCaptured();
-  } catch (const std::exception &e) {
-    if (m_frameCount % 100 == 0) {
+  }
+  catch (const std::exception &e)
+  {
+    if (m_frameCount % 100 == 0)
+    {
       qWarning() << "[ScreenCapture] captureFrame 异常:" << e.what();
     }
   }
@@ -457,18 +518,21 @@ bool ScreenCapture::captureFrame() {
 
 #else // 非 Windows 平台
 
-bool ScreenCapture::initializeDXGI(int screenIndex) {
+bool ScreenCapture::initializeDXGI(int screenIndex)
+{
   Q_UNUSED(screenIndex)
   qWarning() << "[ScreenCapture] DXGI 仅支持 Windows 平台";
   emit captureError("屏幕共享仅支持 Windows 系统");
   return false;
 }
 
-void ScreenCapture::cleanupDXGI() {
+void ScreenCapture::cleanupDXGI()
+{
   // 非 Windows 平台无需清理
 }
 
-bool ScreenCapture::captureFrame() {
+bool ScreenCapture::captureFrame()
+{
   // 非 Windows 平台暂不支持
   return false;
 }

@@ -1543,7 +1543,20 @@ Page {
                         Item { Layout.fillWidth: true }
 
                         Text {
-                            text: (aiAssistant ? aiAssistant.localRecordings.length : 0) + " 个录音文件"
+                            text: {
+                                var total = aiAssistant ? aiAssistant.localRecordings.length : 0;
+                                var audioCount = 0;
+                                var videoCount = 0;
+                                if (aiAssistant) {
+                                    for (var i = 0; i < aiAssistant.localRecordings.length; i++) {
+                                        if (aiAssistant.localRecordings[i].recordType === "video")
+                                            videoCount++;
+                                        else
+                                            audioCount++;
+                                    }
+                                }
+                                return total + " 个文件（🎤" + audioCount + " 🎬" + videoCount + "）"
+                            }
                             font.pixelSize: 13
                             color: "#808090"
                         }
@@ -1594,7 +1607,7 @@ Page {
                             // 空状态
                             Text {
                                 anchors.centerIn: parent
-                                text: "暂无本地录制\n\n在会议中点击录制按钮后，录音会自动保存到这里"
+                                text: "暂无本地录制\n\n在会议中点击录制按钮后，录音/录像会自动保存到这里"
                                 font.pixelSize: 14
                                 color: "#808090"
                                 visible: parent.count === 0
@@ -1603,7 +1616,8 @@ Page {
                             }
 
                             delegate: Rectangle {
-                                property bool isPlaying: currentPlayingFile === modelData.filePath && audioPlayer.playbackState === MediaPlayer.PlayingState
+                                property bool isVideo: modelData.recordType === "video"
+                                property bool isPlaying: !isVideo && currentPlayingFile === modelData.filePath && audioPlayer.playbackState === MediaPlayer.PlayingState
                                 width: ListView.view.width
                                 height: 56
                                 radius: 8
@@ -1617,13 +1631,30 @@ Page {
                                     anchors.rightMargin: 16
                                     spacing: 8
 
-                                    // 会议名称
-                                    Text {
-                                        text: modelData.meetingTitle || modelData.fileName
-                                        font.pixelSize: 13
-                                        color: "#FFFFFF"
-                                        elide: Text.ElideRight
+                                    // 类型标识 + 会议名称
+                                    RowLayout {
                                         Layout.fillWidth: true
+                                        spacing: 6
+
+                                        Rectangle {
+                                            width: 36
+                                            height: 20
+                                            radius: 4
+                                            color: isVideo ? "#7B1FA2" : "#1565C0"
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: isVideo ? "🎬" : "🎤"
+                                                font.pixelSize: 11
+                                            }
+                                        }
+
+                                        Text {
+                                            text: modelData.meetingTitle || modelData.fileName
+                                            font.pixelSize: 13
+                                            color: "#FFFFFF"
+                                            elide: Text.ElideRight
+                                            Layout.fillWidth: true
+                                        }
                                     }
 
                                     // 时长
@@ -1655,36 +1686,44 @@ Page {
                                         Layout.preferredWidth: 230
                                         spacing: 4
 
-                                        // 播放
+                                        // 播放 / 打开
                                         Button {
                                             implicitWidth: 42
                                             implicitHeight: 28
                                             background: Rectangle {
                                                 radius: 6
-                                                color: isPlaying ? "#FF9800" : (parent.parent.parent.parent.isPlaying ? "#FF9800" : (parent.hovered ? "#AB47BC" : "#7B1FA2"))
+                                                color: isVideo
+                                                    ? (parent.hovered ? "#9C27B0" : "#7B1FA2")
+                                                    : (isPlaying ? "#FF9800" : (parent.hovered ? "#AB47BC" : "#7B1FA2"))
                                             }
                                             contentItem: Text {
-                                                text: currentPlayingFile === modelData.filePath && audioPlayer.playbackState === MediaPlayer.PlayingState ? "⏸" : "▶"
+                                                text: isVideo ? "▶" : (currentPlayingFile === modelData.filePath && audioPlayer.playbackState === MediaPlayer.PlayingState ? "⏸" : "▶")
                                                 font.pixelSize: 14
                                                 color: "white"
                                                 horizontalAlignment: Text.AlignHCenter
                                                 verticalAlignment: Text.AlignVCenter
                                             }
                                             onClicked: {
-                                                if (currentPlayingFile === modelData.filePath && audioPlayer.playbackState === MediaPlayer.PlayingState) {
-                                                    audioPlayer.pause();
+                                                if (isVideo) {
+                                                    // 视频文件用系统播放器打开
+                                                    Qt.openUrlExternally("file:///" + modelData.filePath.replace(/\\\\/g, "/"));
                                                 } else {
-                                                    currentPlayingFile = modelData.filePath;
-                                                    audioPlayer.source = "file:///" + modelData.filePath.replace(/\\\\/g, "/");
-                                                    audioPlayer.play();
+                                                    if (currentPlayingFile === modelData.filePath && audioPlayer.playbackState === MediaPlayer.PlayingState) {
+                                                        audioPlayer.pause();
+                                                    } else {
+                                                        currentPlayingFile = modelData.filePath;
+                                                        audioPlayer.source = "file:///" + modelData.filePath.replace(/\\\\/g, "/");
+                                                        audioPlayer.play();
+                                                    }
                                                 }
                                             }
                                         }
 
-                                        // 转录
+                                        // 转录（仅音频）
                                         Button {
                                             implicitWidth: 52
                                             implicitHeight: 28
+                                            visible: !isVideo
                                             enabled: aiAssistant ? (!aiAssistant.isTranscribing && !aiAssistant.isBusy) : false
                                             background: Rectangle {
                                                 radius: 6
@@ -1702,10 +1741,11 @@ Page {
                                             }
                                         }
 
-                                        // 生成纪要
+                                        // 生成纪要（仅音频）
                                         Button {
                                             implicitWidth: 52
                                             implicitHeight: 28
+                                            visible: !isVideo
                                             enabled: aiAssistant ? (!aiAssistant.isTranscribing && !aiAssistant.isBusy) : false
                                             background: Rectangle {
                                                 radius: 6
@@ -1720,6 +1760,30 @@ Page {
                                             }
                                             onClicked: {
                                                 aiAssistant.generateMinutesFromFile(modelData.filePath)
+                                            }
+                                        }
+
+                                        // 打开所在文件夹（仅视频）
+                                        Button {
+                                            implicitWidth: 62
+                                            implicitHeight: 28
+                                            visible: isVideo
+                                            background: Rectangle {
+                                                radius: 6
+                                                color: parent.hovered ? "#42A5F5" : "#1E90FF"
+                                            }
+                                            contentItem: Text {
+                                                text: "📂 文件夹"
+                                                font.pixelSize: 11
+                                                color: "white"
+                                                horizontalAlignment: Text.AlignHCenter
+                                                verticalAlignment: Text.AlignVCenter
+                                            }
+                                            onClicked: {
+                                                // 打开文件所在目录
+                                                var dir = modelData.filePath.replace(/\\\\/g, "/");
+                                                dir = dir.substring(0, dir.lastIndexOf("/"));
+                                                Qt.openUrlExternally("file:///" + dir);
                                             }
                                         }
 

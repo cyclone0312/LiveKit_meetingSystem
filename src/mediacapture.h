@@ -60,6 +60,8 @@ public slots:
 
 signals:
   void frameProcessed();
+  /** @brief 视频帧就绪（供 VideoCompositor 使用）*/
+  void localVideoFrameReady(const QImage &frame);
 
 private:
   std::shared_ptr<livekit::VideoSource> m_videoSource;
@@ -245,6 +247,9 @@ signals:
   // 麦克风原始 PCM 数据信号（转发自 AudioFrameHandler，供 AI 转录使用）
   void rawAudioCaptured(const QByteArray &pcmData, int sampleRate,
                         int channels);
+
+  // 本地摄像头视频帧信号（供 VideoCompositor 使用）
+  void localVideoFrameReady(const QImage &frame);
 
 private slots:
   void onCameraActiveChanged(bool active);

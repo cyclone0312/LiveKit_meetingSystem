@@ -46,7 +46,8 @@ class LiveKitManager;
  * 继承自 livekit::RoomDelegate，接收 SDK 的回调事件
  * 并转发给 Qt 的信号槽系统
  */
-class LiveKitRoomDelegate : public livekit::RoomDelegate {
+class LiveKitRoomDelegate : public livekit::RoomDelegate
+{
 public:
   LiveKitManager *manager = nullptr;
 
@@ -91,7 +92,8 @@ public:
  *
  * Qt 封装层，提供 QML 可调用的接口
  */
-class LiveKitManager : public QObject {
+class LiveKitManager : public QObject
+{
   Q_OBJECT
 
   // QML 可访问的属性
@@ -141,6 +143,10 @@ public:
 
   // 获取 SDK Room 对象（供高级用途）
   livekit::Room *room() const { return m_room.get(); }
+
+  // 获取远程媒体渲染器（供 AudioMixer / VideoCompositor 连接）
+  const QMap<QString, std::shared_ptr<RemoteAudioPlayer>> &remoteAudioPlayers() const { return m_remoteAudioPlayers; }
+  const QMap<QString, std::shared_ptr<RemoteVideoRenderer>> &remoteVideoRenderers() const { return m_remoteVideoRenderers; }
 
 public slots:
   /**

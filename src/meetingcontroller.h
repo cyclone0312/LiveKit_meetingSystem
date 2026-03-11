@@ -7,8 +7,11 @@
 
 // 前向声明
 class LiveKitManager;
+class VideoCompositor;
+class MeetingRecorder;
 
-class MeetingController : public QObject {
+class MeetingController : public QObject
+{
   Q_OBJECT
 
   // 属性定义
@@ -38,6 +41,10 @@ class MeetingController : public QObject {
   Q_PROPERTY(bool isConnecting READ isConnecting NOTIFY connectingChanged)
   Q_PROPERTY(bool isConnected READ isConnected NOTIFY connectedChanged)
 
+  // 视频录制属性
+  Q_PROPERTY(bool isVideoRecording READ isVideoRecording NOTIFY videoRecordingChanged)
+  Q_PROPERTY(int videoRecordingDuration READ videoRecordingDuration NOTIFY videoRecordingDurationChanged)
+
   // 新增：暴露 LiveKitManager 给 QML
   Q_PROPERTY(LiveKitManager *liveKitManager READ liveKitManager CONSTANT)
 
@@ -61,6 +68,14 @@ public:
   // 新增：连接状态 Getter
   bool isConnecting() const;
   bool isConnected() const;
+
+  // 视频录制 Getter
+  bool isVideoRecording() const;
+  int videoRecordingDuration() const;
+
+  // 获取子组件指针（供 main.cpp 连线使用）
+  VideoCompositor *videoCompositor() const;
+  MeetingRecorder *meetingRecorder() const;
 
   // 获取 LiveKitManager 指针（供外部使用）
   LiveKitManager *liveKitManager() const;
@@ -102,6 +117,11 @@ public slots:
   void registerUser(const QString &username, const QString &password);
   void logout();
 
+  // 视频录制控制
+  Q_INVOKABLE void startVideoRecording();
+  Q_INVOKABLE void stopVideoRecording();
+  Q_INVOKABLE void toggleVideoRecording();
+
   // 保存密码功能
   Q_INVOKABLE void saveCredentials(const QString &username,
                                    const QString &password);
@@ -126,6 +146,10 @@ signals:
   // 新增：连接状态信号
   void connectingChanged();
   void connectedChanged();
+
+  // 视频录制信号
+  void videoRecordingChanged();
+  void videoRecordingDurationChanged();
 
   // 事件信号
   void meetingCreated(const QString &meetingId);
@@ -167,6 +191,10 @@ private:
 
   // 新增：LiveKit 管理器
   LiveKitManager *m_liveKitManager;
+
+  // 视频录制
+  VideoCompositor *m_videoCompositor;
+  MeetingRecorder *m_meetingRecorder;
 
   // 用户密码（用于认证）
   QString m_userPassword;

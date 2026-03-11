@@ -36,7 +36,8 @@ using Microsoft::WRL::ComPtr;
 /**
  * @brief 屏幕信息结构
  */
-struct ScreenInfo {
+struct ScreenInfo
+{
   int index;
   QString name;
   int width;
@@ -49,7 +50,8 @@ struct ScreenInfo {
  *
  * 使用 Windows DXGI Desktop Duplication API 捕获屏幕内容
  */
-class ScreenCapture : public QObject {
+class ScreenCapture : public QObject
+{
   Q_OBJECT
 
   Q_PROPERTY(bool isActive READ isActive NOTIFY activeChanged)
@@ -107,6 +109,8 @@ signals:
   void videoSinkChanged();
   void captureError(const QString &error);
   void frameCaptured();
+  /** @brief 屏幕帧就绪（供 VideoCompositor 使用）*/
+  void screenFrameReady(const QImage &frame);
 
 private slots:
   void onCaptureTimer();

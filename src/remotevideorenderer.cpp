@@ -161,6 +161,16 @@ void RemoteVideoRenderer::renderLoop()
         // QVideoSink::setVideoFrame 在 Qt 6 中是线程安全的
         sinkPointer->setVideoFrame(qtFrame);
       }
+
+      // 发出视频帧信号供 VideoCompositor 使用
+      if (!m_participantId.isEmpty())
+      {
+        QImage image = qtFrame.toImage();
+        if (!image.isNull())
+        {
+          emit videoFrameReady(m_participantId, image);
+        }
+      }
       else if (frameCount % 100 == 1)
       {
         qWarning()

@@ -78,6 +78,8 @@ public:
 signals:
   void frameReady();
   void errorOccurred(const QString &error);
+  /** @brief 视频帧就绪（供 VideoCompositor 使用）*/
+  void videoFrameReady(const QString &participantId, const QImage &frame);
 
 private slots:
   void processFrame();
