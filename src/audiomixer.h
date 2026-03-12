@@ -15,54 +15,69 @@
 #define AUDIOMIXER_H
 
 #include <QByteArray>
+#include <QElapsedTimer>
+#include <QMap>
 #include <QMutex>
 #include <QObject>
 #include <QString>
-#include <QMap>
+#include <QTimer>
 #include <vector>
 
 class AudioMixer : public QObject
 {
-    Q_OBJECT
+  Q_OBJECT
 public:
-    explicit AudioMixer(QObject *parent = nullptr);
-    ~AudioMixer() override;
+  explicit AudioMixer(QObject *parent = nullptr);
+  ~AudioMixer() override;
 
 public slots:
-    /**
-     * @brief 输入本地麦克风音频（作为 master clock 驱动混音输出）
-     *
-     * 每次调用时，将本地数据与已缓存的远程数据混合后发出 mixedAudioReady 信号。
-     */
-    void feedLocalAudio(const QByteArray &pcmData, int sampleRate, int channels);
+  /**
+   * @brief 输入本地麦克风音频（作为 master clock 驱动混音输出）
+   *
+   * 每次调用时，将本地数据与已缓存的远程数据混合后发出 mixedAudioReady 信号。
+   */
+  void feedLocalAudio(const QByteArray &pcmData, int sampleRate, int channels);
 
-    /**
-     * @brief 输入远程参会者音频
-     *
-     * 数据缓存到对应 participantId 的缓冲区，等待下一次 feedLocalAudio 时一起混合。
-     */
-    void feedRemoteAudio(const QString &participantId,
-                         const QByteArray &pcmData, int sampleRate, int channels);
+  /**
+   * @brief 输入远程参会者音频
+   *
+   * 数据缓存到对应 participantId 的缓冲区，等待下一次 feedLocalAudio
+   * 时一起混合。
+   */
+  void feedRemoteAudio(const QString &participantId, const QByteArray &pcmData,
+                       int sampleRate, int channels);
 
-    /**
-     * @brief 移除指定参会者的缓冲区（参会者离开时调用）
-     */
-    void removeParticipant(const QString &participantId);
+  /**
+   * @brief 移除指定参会者的缓冲区（参会者离开时调用）
+   */
+  void removeParticipant(const QString &participantId);
 
 signals:
-    /**
-     * @brief 混合后的 PCM 数据就绪
-     * @param pcmData 混合后的 PCM 数据（48kHz / mono / int16_t）
-     * @param sampleRate 采样率
-     * @param channels 声道数
-     */
-    void mixedAudioReady(const QByteArray &pcmData, int sampleRate, int channels);
+  /**
+   * @brief 混合后的 PCM 数据就绪
+   * @param pcmData 混合后的 PCM 数据（48kHz / mono / int16_t）
+   * @param sampleRate 采样率
+   * @param channels 声道数
+   */
+  void mixedAudioReady(const QByteArray &pcmData, int sampleRate, int channels);
 
 private:
-    mutable QMutex m_mutex;
+  // 将多声道 PCM 下混为单声道
+  QByteArray downmixToMono(const QByteArray &pcmData, int channels);
 
-    // 每个远程参会者的待混合音频缓冲区
-    QMap<QString, QByteArray> m_remoteBuffers;
+  // 定时器回调：当无本地麦克风数据时，仍输出远程音频
+  void onMixTimer();
+
+  mutable QMutex m_mutex;
+
+  // 每个远程参会者的待混合音频缓冲区
+  QMap<QString, QByteArray> m_remoteBuffers;
+
+  // 定时混音（本地麦克风未开启时的 fallback 驱动）
+  QTimer *m_mixTimer = nullptr;
+  QElapsedTimer m_localAudioTimer;
+  int m_outputSampleRate = 48000;
+  static constexpr int MIX_INTERVAL_MS = 20;
 };
 
 #endif // AUDIOMIXER_H

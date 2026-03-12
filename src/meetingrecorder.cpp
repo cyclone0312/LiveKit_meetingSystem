@@ -208,13 +208,15 @@ void MeetingRecorder::encodingLoop()
         QMutexLocker locker(&m_audioMutex);
         if (!m_audioBuffer.isEmpty())
         {
-            const auto *samples =
-                reinterpret_cast<const int16_t *>(m_audioBuffer.constData());
-            int sampleCount =
-                static_cast<int>(m_audioBuffer.size()) / static_cast<int>(sizeof(int16_t));
-            m_audioMutex.unlock();
-            encodeAudioSamples(samples, sampleCount);
+            QByteArray data = m_audioBuffer;
             m_audioBuffer.clear();
+            locker.unlock();
+
+            const auto *samples =
+                reinterpret_cast<const int16_t *>(data.constData());
+            int sampleCount =
+                static_cast<int>(data.size()) / static_cast<int>(sizeof(int16_t));
+            encodeAudioSamples(samples, sampleCount);
         }
     }
 
