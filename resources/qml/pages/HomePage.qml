@@ -168,6 +168,35 @@ Page {
         xhr.send(JSON.stringify({ id: historyId, username: username }))
     }
 
+    // 删除所有会议历史记录
+    function deleteAllHistory() {
+        var username = meetingController ? meetingController.userName : ""
+        if (!username) return
+
+        var xhr = new XMLHttpRequest()
+        xhr.open("POST", getServerUrl() + "/api/history/deleteAll")
+        xhr.setRequestHeader("Content-Type", "application/json")
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === XMLHttpRequest.DONE) {
+                if (xhr.status === 200) {
+                    try {
+                        var response = JSON.parse(xhr.responseText)
+                        if (response.success) {
+                            console.log("[HomePage] 已清空所有会议记录, 删除" + response.deleted + "条")
+                            allMeetingsModel.clear()
+                            recentMeetingsModel.clear()
+                        }
+                    } catch (e) {
+                        console.log("[HomePage] 清空解析失败:", e)
+                    }
+                } else {
+                    console.log("[HomePage] 清空失败:", xhr.status)
+                }
+            }
+        }
+        xhr.send(JSON.stringify({ username: username }))
+    }
+
     // 加载预定会议列表
     function loadScheduledMeetings() {
         var username = meetingController ? meetingController.userName : ""
@@ -290,6 +319,162 @@ Page {
                     verticalAlignment: Text.AlignVCenter
                 }
             }
+        }
+    }
+
+    // 确认删除所有历史会议
+    Dialog {
+        id: deleteAllHistoryDialog
+        anchors.centerIn: parent
+        title: "确认删除"
+        modal: true
+
+        background: Rectangle {
+            radius: 12
+            color: "#252542"
+            border.color: "#3D3D5C"
+            border.width: 1
+        }
+
+        header: Rectangle {
+            color: "transparent"
+            height: 48
+            Text {
+                anchors.centerIn: parent
+                text: "确认删除所有历史会议？"
+                font.pixelSize: 16
+                font.bold: true
+                color: "#FFFFFF"
+            }
+        }
+
+        contentItem: Text {
+            text: "此操作将删除所有历史会议记录，\n且不可恢复。"
+            font.pixelSize: 14
+            color: "#C0C0D0"
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.Wrap
+            padding: 20
+        }
+
+        footer: DialogButtonBox {
+            alignment: Qt.AlignHCenter
+            background: Rectangle { color: "transparent" }
+
+            Button {
+                text: "取消"
+                font.pixelSize: 14
+                DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+                background: Rectangle {
+                    radius: 6
+                    color: parent.pressed ? "#3D3D5C" : "#2D2D4A"
+                }
+                contentItem: Text {
+                    text: parent.text
+                    font: parent.font
+                    color: "#B0B0C0"
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+
+            Button {
+                text: "确认删除"
+                font.pixelSize: 14
+                DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
+                background: Rectangle {
+                    radius: 6
+                    color: parent.pressed ? "#D32F2F" : "#EF5350"
+                }
+                contentItem: Text {
+                    text: parent.text
+                    font: parent.font
+                    color: "white"
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+        }
+
+        onAccepted: deleteAllHistory()
+    }
+
+    // 确认删除所有本地录制
+    Dialog {
+        id: deleteAllRecordingsDialog
+        anchors.centerIn: parent
+        title: "确认删除"
+        modal: true
+
+        background: Rectangle {
+            radius: 12
+            color: "#252542"
+            border.color: "#3D3D5C"
+            border.width: 1
+        }
+
+        header: Rectangle {
+            color: "transparent"
+            height: 48
+            Text {
+                anchors.centerIn: parent
+                text: "确认删除所有本地录制？"
+                font.pixelSize: 16
+                font.bold: true
+                color: "#FFFFFF"
+            }
+        }
+
+        contentItem: Text {
+            text: "此操作将删除所有本地录制文件，\n且不可恢复。"
+            font.pixelSize: 14
+            color: "#C0C0D0"
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.Wrap
+            padding: 20
+        }
+
+        footer: DialogButtonBox {
+            alignment: Qt.AlignHCenter
+            background: Rectangle { color: "transparent" }
+
+            Button {
+                text: "取消"
+                font.pixelSize: 14
+                DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+                background: Rectangle {
+                    radius: 6
+                    color: parent.pressed ? "#3D3D5C" : "#2D2D4A"
+                }
+                contentItem: Text {
+                    text: parent.text
+                    font: parent.font
+                    color: "#B0B0C0"
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+
+            Button {
+                text: "确认删除"
+                font.pixelSize: 14
+                DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
+                background: Rectangle {
+                    radius: 6
+                    color: parent.pressed ? "#D32F2F" : "#EF5350"
+                }
+                contentItem: Text {
+                    text: parent.text
+                    font: parent.font
+                    color: "white"
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+        }
+
+        onAccepted: {
+            if (aiAssistant) aiAssistant.deleteAllLocalRecordings()
         }
     }
 
@@ -1387,6 +1572,31 @@ Page {
                                 }
                             }
                         }
+
+                        Button {
+                            implicitWidth: 90
+                            implicitHeight: 34
+                            text: "🗑 一键删除"
+                            font.pixelSize: 12
+                            enabled: allMeetingsModel.count > 0
+
+                            background: Rectangle {
+                                radius: 8
+                                color: parent.enabled
+                                    ? (parent.pressed ? "#D32F2F" : parent.hovered ? "#EF5350" : "#3D3D5C")
+                                    : "#2D2D4A"
+                            }
+
+                            contentItem: Text {
+                                text: parent.text
+                                font.pixelSize: 12
+                                color: parent.parent.enabled ? (parent.parent.hovered ? "white" : "#B0B0C0") : "#555"
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
+
+                            onClicked: deleteAllHistoryDialog.open()
+                        }
                     }
                 }
 
@@ -1560,6 +1770,31 @@ Page {
                             }
                             font.pixelSize: 13
                             color: "#808090"
+                        }
+
+                        Button {
+                            implicitWidth: 90
+                            implicitHeight: 34
+                            text: "🗑 一键删除"
+                            font.pixelSize: 12
+                            enabled: aiAssistant ? aiAssistant.localRecordings.length > 0 : false
+
+                            background: Rectangle {
+                                radius: 8
+                                color: parent.enabled
+                                    ? (parent.pressed ? "#D32F2F" : parent.hovered ? "#EF5350" : "#3D3D5C")
+                                    : "#2D2D4A"
+                            }
+
+                            contentItem: Text {
+                                text: parent.text
+                                font.pixelSize: 12
+                                color: parent.parent.enabled ? (parent.parent.hovered ? "white" : "#B0B0C0") : "#555"
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
+
+                            onClicked: deleteAllRecordingsDialog.open()
                         }
                     }
                 }

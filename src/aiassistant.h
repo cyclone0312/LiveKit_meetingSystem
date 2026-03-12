@@ -174,6 +174,11 @@ public slots:
   Q_INVOKABLE void deleteLocalRecording(int index);
 
   /**
+   * @brief 删除所有本地录制文件和元数据
+   */
+  Q_INVOKABLE void deleteAllLocalRecordings();
+
+  /**
    * @brief 保存视频录制元数据（供 MeetingRecorder 调用）
    */
   Q_INVOKABLE void saveVideoRecordingMeta(const QString &filePath,

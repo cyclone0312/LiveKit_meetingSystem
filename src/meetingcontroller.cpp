@@ -681,16 +681,17 @@ void MeetingController::startVideoRecording()
       QString("meeting_%1_%2.mp4").arg(m_meetingId, timestamp);
   QString outputPath = outputDir + "/" + fileName;
 
-  // 启动合成器
-  m_videoCompositor->start();
-
-  // 启动录制器
+  // 先启动录制器（initFFmpeg 会阻塞主线程数百毫秒）
+  // 再启动合成器，避免合成器定时器在 initFFmpeg 期间排队大量事件
+  // 导致视频 PTS 级联偏移、音画不同步
   if (!m_meetingRecorder->startRecording(outputPath))
   {
-    m_videoCompositor->stop();
     emit showMessage("视频录制启动失败");
     return;
   }
+
+  // 录制器就绪后再启动合成器，首帧将在 ~33ms 后到达
+  m_videoCompositor->start();
 
   qDebug() << "[MeetingController] 视频录制开始:" << outputPath;
   emit showMessage("视频录制已开始");

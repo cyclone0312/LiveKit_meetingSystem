@@ -10,6 +10,7 @@
 #include <QRegularExpression>
 #include <QUrl>
 #include <QUrlQuery>
+#include <algorithm>
 
 AIAssistant::AIAssistant(QObject *parent)
     : QObject(parent), m_networkManager(new QNetworkAccessManager(this)),
@@ -718,6 +719,27 @@ void AIAssistant::deleteLocalRecording(int index)
   loadLocalRecordings();
 }
 
+void AIAssistant::deleteAllLocalRecordings()
+{
+  // 删除所有录制文件
+  for (const QVariant &v : m_localRecordings)
+  {
+    QVariantMap recording = v.toMap();
+    QString filePath = recording["filePath"].toString();
+    QFile::remove(filePath);
+  }
+
+  // 清空元数据
+  QSettings settings("MeetingApp", "Recordings");
+  settings.beginWriteArray("recordings", 0);
+  settings.endArray();
+  settings.sync();
+
+  qDebug() << "[AIAssistant] 已删除所有本地录制";
+
+  loadLocalRecordings();
+}
+
 void AIAssistant::loadLocalRecordings()
 {
   QSettings settings("MeetingApp", "Recordings");
@@ -762,6 +784,9 @@ void AIAssistant::loadLocalRecordings()
     m_localRecordings.append(map);
   }
   settings.endArray();
+
+  // 反转列表：新录制的排在前面
+  std::reverse(m_localRecordings.begin(), m_localRecordings.end());
 
   emit localRecordingsChanged();
   qDebug() << "[AIAssistant] 加载本地录制列表:" << m_localRecordings.size()

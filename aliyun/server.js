@@ -707,6 +707,29 @@ app.post('/api/history/delete', async (req, res) => {
     }
 });
 
+/**
+ * POST /api/history/deleteAll
+ * 删除指定用户的所有会议历史记录
+ * Body: { username }
+ */
+app.post('/api/history/deleteAll', async (req, res) => {
+    const { username } = req.body;
+    if (!username) {
+        return res.status(400).json({ success: false, error: '缺少参数' });
+    }
+    try {
+        const [result] = await pool.execute(
+            'DELETE FROM meeting_logs WHERE user_id = (SELECT id FROM users WHERE username = ?)',
+            [username]
+        );
+        console.log(`[History] 清空所有记录 user=${username} affected=${result.affectedRows}`);
+        res.json({ success: true, deleted: result.affectedRows });
+    } catch (e) {
+        console.error('[History] deleteAll error:', e.message);
+        res.status(500).json({ success: false, error: '删除失败: ' + e.message });
+    }
+});
+
 // ==================== 预定会议功能 ====================
 
 // 自动创建 scheduled_meetings 表

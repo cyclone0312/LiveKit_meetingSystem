@@ -49,9 +49,12 @@ bool MeetingRecorder::startRecording(const QString &outputPath, int width,
     }
 
     m_videoFrameCount = 0;
+    m_lastVideoPts = -1;
     m_audioSampleCount = 0;
     m_durationSeconds.store(0);
     m_startTimeUs = 0;
+    m_audioTimeInitialized = false;
+    m_wallClock.start();
 
     // 清空队列
     {
@@ -109,14 +112,18 @@ void MeetingRecorder::stopRecording()
 
 void MeetingRecorder::feedVideoFrame(const QImage &frame, qint64 timestampUs)
 {
+    Q_UNUSED(timestampUs)
     if (!m_recording.load())
         return;
+
+    // 使用统一挂钟时间戳，确保与音频共享同一时间原点
+    qint64 wallTimeUs = m_wallClock.nsecsElapsed() / 1000;
 
     QMutexLocker locker(&m_videoMutex);
     // 限制队列长度，防止编码跟不上时堆积
     if (m_videoQueue.size() < 60)
     {
-        m_videoQueue.enqueue({frame, timestampUs});
+        m_videoQueue.enqueue({frame, wallTimeUs});
     }
     m_encodeCondition.wakeOne();
 }
@@ -130,6 +137,18 @@ void MeetingRecorder::feedAudioData(const QByteArray &pcmData, int sampleRate,
         return;
 
     QMutexLocker locker(&m_audioMutex);
+
+    // 首次音频到达：用挂钟时间初始化音频 PTS 起点，与视频对齐
+    if (!m_audioTimeInitialized)
+    {
+        qint64 wallTimeUs = m_wallClock.nsecsElapsed() / 1000;
+        m_audioSampleCount =
+            wallTimeUs * m_audioSampleRate / 1000000;
+        m_audioTimeInitialized = true;
+        qDebug() << "[MeetingRecorder] 首次音频到达, wallTime="
+                 << wallTimeUs << "us, 初始 audioPts=" << m_audioSampleCount;
+    }
+
     m_audioBuffer.append(pcmData);
     m_encodeCondition.wakeOne();
 }
@@ -173,10 +192,9 @@ void MeetingRecorder::encodingLoop()
             }
         }
 
-        // 更新时长
-        if (m_videoFrameCount > 0)
+        // 更新时长（基于挂钟）
         {
-            int seconds = static_cast<int>(m_videoFrameCount / m_videoFps);
+            int seconds = static_cast<int>(m_wallClock.elapsed() / 1000);
             if (seconds != m_durationSeconds.load())
             {
                 m_durationSeconds.store(seconds);
@@ -263,7 +281,7 @@ bool MeetingRecorder::initFFmpeg(const QString &outputPath, int width,
     m_videoCodecCtx->codec_type = AVMEDIA_TYPE_VIDEO;
     m_videoCodecCtx->width = width;
     m_videoCodecCtx->height = height;
-    m_videoCodecCtx->time_base = {1, fps};
+    m_videoCodecCtx->time_base = {1, VIDEO_TIME_BASE};
     m_videoCodecCtx->framerate = {fps, 1};
     m_videoCodecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
     m_videoCodecCtx->gop_size = fps * 2; // 每 2 秒一个关键帧
@@ -502,7 +520,19 @@ bool MeetingRecorder::encodeVideoFrame(const QImage &frame,
     sws_scale(m_swsCtx, srcData, srcLinesize, 0, m_videoHeight,
               m_videoFrame->data, m_videoFrame->linesize);
 
-    m_videoFrame->pts = m_videoFrameCount++;
+    // 使用挂钟时间戳计算 PTS（time_base = 1/90000），避免低精度导致 DTS 重复
+    int64_t pts = timestampUs * VIDEO_TIME_BASE / 1000000;
+    // 保证 PTS 严格单调递增，避免 "non monotonically increasing dts" 错误
+    if (pts <= m_lastVideoPts)
+    {
+        // 仅递增 1 tick，使下一帧的真实 PTS 能自然超越、避免级联偏移
+        qDebug() << "[MeetingRecorder] Video PTS 碰撞, 原:" << pts
+                 << "→" << (m_lastVideoPts + 1);
+        pts = m_lastVideoPts + 1;
+    }
+    m_lastVideoPts = pts;
+    m_videoFrame->pts = pts;
+    m_videoFrameCount++;
 
     // 发送帧到编码器
     int ret = avcodec_send_frame(m_videoCodecCtx, m_videoFrame);

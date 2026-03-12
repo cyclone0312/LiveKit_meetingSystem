@@ -12,6 +12,7 @@
 #ifndef MEETINGRECORDER_H
 #define MEETINGRECORDER_H
 
+#include <QElapsedTimer>
 #include <QImage>
 #include <QMutex>
 #include <QObject>
@@ -130,9 +131,11 @@ private:
     SwsContext *m_swsCtx = nullptr;
     AVFrame *m_videoFrame = nullptr;
     int64_t m_videoFrameCount = 0;
+    int64_t m_lastVideoPts = -1; // 保证 PTS 严格单调递增
     int m_videoWidth = 1920;
     int m_videoHeight = 1080;
     int m_videoFps = 30;
+    static constexpr int VIDEO_TIME_BASE = 90000; // MPEG 标准高精度时间基
 
     // 音频编码
     AVCodecContext *m_audioCodecCtx = nullptr;
@@ -145,6 +148,10 @@ private:
 
     // 音频临时缓冲（积攒到 m_audioFrameSize 后送编码）
     QByteArray m_audioEncodeBuf;
+
+    // 音视频同步：共享挂钟
+    QElapsedTimer m_wallClock;
+    bool m_audioTimeInitialized = false;
 
     // 开始时间
     qint64 m_startTimeUs = 0;
