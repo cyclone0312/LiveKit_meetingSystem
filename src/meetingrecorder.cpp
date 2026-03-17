@@ -66,6 +66,18 @@ bool MeetingRecorder::startRecording(const QString &outputPath, int width,
         m_audioBuffer.clear();
         m_audioEncodeBuf.clear();
     }
+    // 清空 packet 队列
+    {
+        QMutexLocker locker(&m_packetMutex);
+        while (!m_videoPackets.isEmpty()) {
+            AVPacket *pkt = m_videoPackets.dequeue();
+            av_packet_free(&pkt);
+        }
+        while (!m_audioPackets.isEmpty()) {
+            AVPacket *pkt = m_audioPackets.dequeue();
+            av_packet_free(&pkt);
+        }
+    }
 
     m_recording.store(true);
     emit recordingChanged();
@@ -91,7 +103,7 @@ void MeetingRecorder::stopRecording()
     // 唤醒编码线程
     m_encodeCondition.wakeAll();
 
-    // 等待编码线程结束
+    // 等待编码线程结束（flush 已在 encodingLoop 末尾完成）
     if (m_encodingThread)
     {
         m_encodingThread->wait(10000); // 最多等 10 秒
@@ -99,8 +111,6 @@ void MeetingRecorder::stopRecording()
         m_encodingThread = nullptr;
     }
 
-    // flush 编码器并关闭文件
-    flushEncoders();
     cleanupFFmpeg();
 
     emit recordingChanged();
@@ -192,6 +202,9 @@ void MeetingRecorder::encodingLoop()
             }
         }
 
+        // 交织写入：每轮编码后，按 DTS 归并两个队列的 packet 写入文件
+        writeInterleavedPackets();
+
         // 更新时长（基于挂钟）
         {
             int seconds = static_cast<int>(m_wallClock.elapsed() / 1000);
@@ -211,7 +224,7 @@ void MeetingRecorder::encodingLoop()
         }
     }
 
-    // 处理剩余数据
+    // 处理剩余原始数据
     {
         QMutexLocker locker(&m_videoMutex);
         while (!m_videoQueue.isEmpty())
@@ -237,6 +250,10 @@ void MeetingRecorder::encodingLoop()
             encodeAudioSamples(samples, sampleCount);
         }
     }
+
+    // flush 编码器并将剩余 packets 排序写入
+    flushEncoders();
+    flushPacketQueues();
 
     qDebug() << "[MeetingRecorder] 编码线程结束, 视频帧:" << m_videoFrameCount
              << "音频样本:" << m_audioSampleCount;
@@ -438,6 +455,19 @@ bool MeetingRecorder::initFFmpeg(const QString &outputPath, int width,
 
 void MeetingRecorder::cleanupFFmpeg()
 {
+    // 释放队列中残留的 AVPacket（防止内存泄漏）
+    {
+        QMutexLocker locker(&m_packetMutex);
+        while (!m_videoPackets.isEmpty()) {
+            AVPacket *pkt = m_videoPackets.dequeue();
+            av_packet_free(&pkt);
+        }
+        while (!m_audioPackets.isEmpty()) {
+            AVPacket *pkt = m_audioPackets.dequeue();
+            av_packet_free(&pkt);
+        }
+    }
+
     if (m_formatCtx && m_formatCtx->pb)
     {
         av_write_trailer(m_formatCtx);
@@ -542,7 +572,7 @@ bool MeetingRecorder::encodeVideoFrame(const QImage &frame,
         return false;
     }
 
-    // 读取编码后的数据包
+    // 读取编码后的数据包，存入队列（不直接写文件）
     AVPacket *pkt = av_packet_alloc();
     while (ret >= 0)
     {
@@ -560,10 +590,11 @@ bool MeetingRecorder::encodeVideoFrame(const QImage &frame,
                              m_videoStream->time_base);
         pkt->stream_index = m_videoStream->index;
 
-        ret = av_interleaved_write_frame(m_formatCtx, pkt);
-        if (ret < 0)
+        // 克隆并入队
+        AVPacket *clone = av_packet_clone(pkt);
         {
-            qWarning() << "[MeetingRecorder] av_interleaved_write_frame(video) 失败";
+            QMutexLocker locker(&m_packetMutex);
+            m_videoPackets.enqueue(clone);
         }
     }
     av_packet_free(&pkt);
@@ -630,7 +661,12 @@ bool MeetingRecorder::encodeAudioSamples(const int16_t *samples,
                                  m_audioStream->time_base);
             pkt->stream_index = m_audioStream->index;
 
-            ret = av_interleaved_write_frame(m_formatCtx, pkt);
+            // 克隆并入队
+            AVPacket *clone = av_packet_clone(pkt);
+            {
+                QMutexLocker locker(&m_packetMutex);
+                m_audioPackets.enqueue(clone);
+            }
         }
         av_packet_free(&pkt);
         m_audioEncodeBuf.remove(0, frameSizeBytes);
@@ -644,7 +680,7 @@ void MeetingRecorder::flushEncoders()
     if (!m_formatCtx)
         return;
 
-    // Flush 视频编码器
+    // Flush 视频编码器 —— 将剩余包存入队列
     if (m_videoCodecCtx)
     {
         avcodec_send_frame(m_videoCodecCtx, nullptr);
@@ -660,12 +696,16 @@ void MeetingRecorder::flushEncoders()
             av_packet_rescale_ts(pkt, m_videoCodecCtx->time_base,
                                  m_videoStream->time_base);
             pkt->stream_index = m_videoStream->index;
-            av_interleaved_write_frame(m_formatCtx, pkt);
+            AVPacket *clone = av_packet_clone(pkt);
+            {
+                QMutexLocker locker(&m_packetMutex);
+                m_videoPackets.enqueue(clone);
+            }
         }
         av_packet_free(&pkt);
     }
 
-    // Flush 音频编码器
+    // Flush 音频编码器 —— 将剩余包存入队列
     if (m_audioCodecCtx)
     {
         avcodec_send_frame(m_audioCodecCtx, nullptr);
@@ -681,8 +721,82 @@ void MeetingRecorder::flushEncoders()
             av_packet_rescale_ts(pkt, m_audioCodecCtx->time_base,
                                  m_audioStream->time_base);
             pkt->stream_index = m_audioStream->index;
+            AVPacket *clone = av_packet_clone(pkt);
+            {
+                QMutexLocker locker(&m_packetMutex);
+                m_audioPackets.enqueue(clone);
+            }
+        }
+        av_packet_free(&pkt);
+    }
+}
+
+// ==============================================================================
+// 交织写入
+// ==============================================================================
+
+int64_t MeetingRecorder::packetDtsInUs(const AVPacket *pkt) const
+{
+    // 根据 stream_index 确定是视频还是音频，将 DTS 转换为微秒
+    AVRational tb;
+    if (pkt->stream_index == m_videoStream->index)
+        tb = m_videoStream->time_base;
+    else
+        tb = m_audioStream->time_base;
+
+    int64_t dts = (pkt->dts != AV_NOPTS_VALUE) ? pkt->dts : pkt->pts;
+    // dts * tb.num / tb.den 转换为秒，再乘 1000000 转微秒
+    return av_rescale_q(dts, tb, {1, 1000000});
+}
+
+void MeetingRecorder::writeInterleavedPackets()
+{
+    QMutexLocker lock(&m_packetMutex);
+
+    // 只有在两侧都有包时才归并写入，确保全局时间单调递增
+    while (!m_videoPackets.isEmpty() && !m_audioPackets.isEmpty())
+    {
+        int64_t vDts = packetDtsInUs(m_videoPackets.head());
+        int64_t aDts = packetDtsInUs(m_audioPackets.head());
+
+        AVPacket *pkt = (vDts <= aDts)
+                            ? m_videoPackets.dequeue()
+                            : m_audioPackets.dequeue();
+
+        lock.unlock();
+        {
+            QMutexLocker muxLock(&m_muxMutex);
             av_interleaved_write_frame(m_formatCtx, pkt);
         }
+        av_packet_free(&pkt);
+        lock.relock();
+    }
+}
+
+void MeetingRecorder::flushPacketQueues()
+{
+    QMutexLocker lock(&m_packetMutex);
+
+    // 收尾阶段：将两个队列剩余的 packets 合并、按 DTS 排序后写入
+    QList<AVPacket *> remaining;
+    while (!m_videoPackets.isEmpty())
+        remaining.append(m_videoPackets.dequeue());
+    while (!m_audioPackets.isEmpty())
+        remaining.append(m_audioPackets.dequeue());
+
+    // 按 DTS 排序
+    std::sort(remaining.begin(), remaining.end(),
+              [this](const AVPacket *a, const AVPacket *b)
+              {
+                  return packetDtsInUs(a) < packetDtsInUs(b);
+              });
+
+    lock.unlock();
+
+    QMutexLocker muxLock(&m_muxMutex);
+    for (AVPacket *pkt : remaining)
+    {
+        av_interleaved_write_frame(m_formatCtx, pkt);
         av_packet_free(&pkt);
     }
 }

@@ -104,6 +104,13 @@ private:
     // flush 编码器
     void flushEncoders();
 
+    // 交织写入：按 DTS 归并两个 packet 队列写入文件
+    void writeInterleavedPackets();
+    // 收尾：将剩余 packets 合并排序后全部写入
+    void flushPacketQueues();
+    // 将 packet 的 DTS 转换为统一微秒时间（用于跨流比较）
+    int64_t packetDtsInUs(const AVPacket *pkt) const;
+
 private:
     std::atomic<bool> m_recording{false};
     std::atomic<int> m_durationSeconds{0};
@@ -118,6 +125,14 @@ private:
 
     QMutex m_audioMutex;
     QByteArray m_audioBuffer;
+
+    // 编码后的 Packet 队列（替代直接写文件）
+    QMutex m_packetMutex;
+    QQueue<AVPacket *> m_videoPackets;
+    QQueue<AVPacket *> m_audioPackets;
+
+    // 写文件锁（保证 av_interleaved_write_frame 串行调用）
+    QMutex m_muxMutex;
 
     QWaitCondition m_encodeCondition;
     QMutex m_conditionMutex;
