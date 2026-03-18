@@ -208,6 +208,14 @@ if(BUILD_TESTS)
         LiveKit::livekit_ffi
     )
 
+    target_link_libraries(MeetingAppLib PUBLIC
+        FFmpeg::avcodec
+        FFmpeg::avformat
+        FFmpeg::avutil
+        FFmpeg::swscale
+        FFmpeg::swresample
+    )
+
     # [Windows] Debug SDK 额外依赖
     if(WIN32 AND DEFINED LIVEKIT_DEBUG_LIB AND EXISTS "${LIVEKIT_DEBUG_LIB}/libprotobufd.lib")
         target_link_libraries(MeetingAppLib PUBLIC
