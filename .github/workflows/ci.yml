@@ -112,9 +112,10 @@ jobs:
             livekit-sdk-linux-x64-
 
       - name: Configure CMake
-        run: >
-          cmake -B build -G Ninja
-          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DFFMPEG_ROOT=/usr
 
       - name: Build
         run: cmake --build build --config ${{ matrix.build_type }} -j $(nproc)
@@ -143,6 +144,10 @@ jobs:
       - name: Install Ninja
         run: brew install ninja pkg-config ffmpeg
 
+      - name: Resolve FFmpeg prefix
+        id: ffmpeg
+        run: echo "prefix=$(brew --prefix ffmpeg)" >> "$GITHUB_OUTPUT"
+
       - name: Install Qt 6
         uses: jurplel/install-qt-action@v4
         with:
@@ -160,10 +165,11 @@ jobs:
             livekit-sdk-macos-arm64-
 
       - name: Configure CMake
-        run: >
-          cmake -B build -G Ninja
-          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
-          -DLINKS_SDK_ARCH=arm64
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DLINKS_SDK_ARCH=arm64 \
+            -DFFMPEG_ROOT="${{ steps.ffmpeg.outputs.prefix }}"
 
       - name: Build
         run: cmake --build build --config ${{ matrix.build_type }} -j $(sysctl -n hw.logicalcpu)

@@ -21,10 +21,6 @@ include(FetchContent)
 set(FFMPEG_VERSION "7.1" CACHE STRING "FFmpeg version to download")
 
 set(FFMPEG_LOCAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ffmpeg")
-set(FFMPEG_ROOT "")
-set(FFMPEG_INCLUDE_DIR "")
-set(FFMPEG_LIB_DIR "")
-set(FFMPEG_BIN_DIR "")
 
 macro(ffmpeg_fail message_text)
     message(FATAL_ERROR "FetchFFmpeg: ${message_text}")
@@ -48,7 +44,72 @@ function(ffmpeg_add_imported_lib target_name)
     endif()
 endfunction()
 
-if(EXISTS "${FFMPEG_LOCAL_DIR}/include/libavcodec/avcodec.h")
+if(FFMPEG_ROOT)
+    if(NOT FFMPEG_INCLUDE_DIR)
+        set(FFMPEG_INCLUDE_DIR "${FFMPEG_ROOT}/include")
+    endif()
+    if(NOT FFMPEG_LIB_DIR)
+        if(EXISTS "${FFMPEG_ROOT}/lib64")
+            set(FFMPEG_LIB_DIR "${FFMPEG_ROOT}/lib64")
+        else()
+            set(FFMPEG_LIB_DIR "${FFMPEG_ROOT}/lib")
+        endif()
+    endif()
+    if(NOT FFMPEG_BIN_DIR)
+        if(WIN32)
+            set(FFMPEG_BIN_DIR "${FFMPEG_ROOT}/bin")
+        else()
+            set(FFMPEG_BIN_DIR "${FFMPEG_LIB_DIR}")
+        endif()
+    endif()
+endif()
+
+if(NOT WIN32
+   AND FFMPEG_INCLUDE_DIR
+   AND FFMPEG_LIB_DIR
+   AND EXISTS "${FFMPEG_INCLUDE_DIR}/libavcodec/avcodec.h")
+    message(STATUS "[FFmpeg] 使用显式配置的系统 FFmpeg: ${FFMPEG_ROOT}")
+
+    find_library(FFMPEG_AVCODEC_LIBRARY
+        NAMES avcodec
+        HINTS "${FFMPEG_LIB_DIR}"
+        PATH_SUFFIXES "" lib lib64
+    )
+    find_library(FFMPEG_AVFORMAT_LIBRARY
+        NAMES avformat
+        HINTS "${FFMPEG_LIB_DIR}"
+        PATH_SUFFIXES "" lib lib64
+    )
+    find_library(FFMPEG_AVUTIL_LIBRARY
+        NAMES avutil
+        HINTS "${FFMPEG_LIB_DIR}"
+        PATH_SUFFIXES "" lib lib64
+    )
+    find_library(FFMPEG_SWSCALE_LIBRARY
+        NAMES swscale
+        HINTS "${FFMPEG_LIB_DIR}"
+        PATH_SUFFIXES "" lib lib64
+    )
+    find_library(FFMPEG_SWRESAMPLE_LIBRARY
+        NAMES swresample
+        HINTS "${FFMPEG_LIB_DIR}"
+        PATH_SUFFIXES "" lib lib64
+    )
+
+    if(NOT FFMPEG_AVCODEC_LIBRARY
+       OR NOT FFMPEG_AVFORMAT_LIBRARY
+       OR NOT FFMPEG_AVUTIL_LIBRARY
+       OR NOT FFMPEG_SWSCALE_LIBRARY
+       OR NOT FFMPEG_SWRESAMPLE_LIBRARY)
+        ffmpeg_fail("显式配置的 FFmpeg 根目录无效: ${FFMPEG_ROOT}")
+    endif()
+
+    ffmpeg_add_imported_lib(avcodec    LIB_PATH "${FFMPEG_AVCODEC_LIBRARY}")
+    ffmpeg_add_imported_lib(avformat   LIB_PATH "${FFMPEG_AVFORMAT_LIBRARY}")
+    ffmpeg_add_imported_lib(avutil     LIB_PATH "${FFMPEG_AVUTIL_LIBRARY}")
+    ffmpeg_add_imported_lib(swscale    LIB_PATH "${FFMPEG_SWSCALE_LIBRARY}")
+    ffmpeg_add_imported_lib(swresample LIB_PATH "${FFMPEG_SWRESAMPLE_LIBRARY}")
+elseif(EXISTS "${FFMPEG_LOCAL_DIR}/include/libavcodec/avcodec.h")
     message(STATUS "[FFmpeg] 使用本地预编译 FFmpeg: ${FFMPEG_LOCAL_DIR}")
     set(FFMPEG_ROOT "${FFMPEG_LOCAL_DIR}")
     set(FFMPEG_INCLUDE_DIR "${FFMPEG_ROOT}/include")
@@ -164,7 +225,43 @@ elseif(WIN32)
     ffmpeg_add_windows_imported_lib(swscale swscale)
     ffmpeg_add_windows_imported_lib(swresample swresample)
 else()
-    include(FindPkgConfig)
+    find_package(PkgConfig QUIET)
+
+    set(_ffmpeg_prefix_hints "")
+    if(APPLE)
+        find_program(HOMEBREW_EXECUTABLE brew)
+        if(HOMEBREW_EXECUTABLE)
+            execute_process(
+                COMMAND ${HOMEBREW_EXECUTABLE} --prefix ffmpeg
+                OUTPUT_VARIABLE _brew_ffmpeg_prefix
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+                ERROR_QUIET
+            )
+            if(_brew_ffmpeg_prefix)
+                list(APPEND _ffmpeg_prefix_hints "${_brew_ffmpeg_prefix}")
+            endif()
+
+            execute_process(
+                COMMAND ${HOMEBREW_EXECUTABLE} --prefix
+                OUTPUT_VARIABLE _brew_prefix
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+                ERROR_QUIET
+            )
+            if(_brew_prefix)
+                list(APPEND _ffmpeg_prefix_hints "${_brew_prefix}" "${_brew_prefix}/opt/ffmpeg")
+            endif()
+        endif()
+        list(APPEND _ffmpeg_prefix_hints /opt/homebrew /opt/homebrew/opt/ffmpeg /usr/local /usr/local/opt/ffmpeg)
+    else()
+        list(APPEND _ffmpeg_prefix_hints /usr /usr/local)
+    endif()
+
+    set(_ffmpeg_include_hints "")
+    set(_ffmpeg_library_hints "")
+    foreach(prefix IN LISTS _ffmpeg_prefix_hints)
+        list(APPEND _ffmpeg_include_hints "${prefix}/include")
+        list(APPEND _ffmpeg_library_hints "${prefix}/lib")
+    endforeach()
 
     if(PkgConfig_FOUND)
         pkg_check_modules(PC_FFMPEG_AVCODEC QUIET libavcodec)
@@ -177,6 +274,7 @@ else()
     find_path(FFMPEG_INCLUDE_DIR
         NAMES libavcodec/avcodec.h
         HINTS
+            ${_ffmpeg_include_hints}
             ${PC_FFMPEG_AVCODEC_INCLUDE_DIRS}
             ${PC_FFMPEG_AVFORMAT_INCLUDE_DIRS}
             ${PC_FFMPEG_AVUTIL_INCLUDE_DIRS}
@@ -186,23 +284,23 @@ else()
 
     find_library(FFMPEG_AVCODEC_LIBRARY
         NAMES avcodec
-        HINTS ${PC_FFMPEG_AVCODEC_LIBRARY_DIRS}
+        HINTS ${_ffmpeg_library_hints} ${PC_FFMPEG_AVCODEC_LIBRARY_DIRS}
     )
     find_library(FFMPEG_AVFORMAT_LIBRARY
         NAMES avformat
-        HINTS ${PC_FFMPEG_AVFORMAT_LIBRARY_DIRS}
+        HINTS ${_ffmpeg_library_hints} ${PC_FFMPEG_AVFORMAT_LIBRARY_DIRS}
     )
     find_library(FFMPEG_AVUTIL_LIBRARY
         NAMES avutil
-        HINTS ${PC_FFMPEG_AVUTIL_LIBRARY_DIRS}
+        HINTS ${_ffmpeg_library_hints} ${PC_FFMPEG_AVUTIL_LIBRARY_DIRS}
     )
     find_library(FFMPEG_SWSCALE_LIBRARY
         NAMES swscale
-        HINTS ${PC_FFMPEG_SWSCALE_LIBRARY_DIRS}
+        HINTS ${_ffmpeg_library_hints} ${PC_FFMPEG_SWSCALE_LIBRARY_DIRS}
     )
     find_library(FFMPEG_SWRESAMPLE_LIBRARY
         NAMES swresample
-        HINTS ${PC_FFMPEG_SWRESAMPLE_LIBRARY_DIRS}
+        HINTS ${_ffmpeg_library_hints} ${PC_FFMPEG_SWRESAMPLE_LIBRARY_DIRS}
     )
 
     include(FindPackageHandleStandardArgs)
@@ -228,9 +326,11 @@ endif()
 set(FFMPEG_INCLUDE_DIR "${FFMPEG_INCLUDE_DIR}" CACHE PATH "FFmpeg include directory")
 set(FFMPEG_LIB_DIR "${FFMPEG_LIB_DIR}" CACHE PATH "FFmpeg library directory")
 set(FFMPEG_BIN_DIR "${FFMPEG_BIN_DIR}" CACHE PATH "FFmpeg runtime directory")
+set(FFMPEG_ROOT "${FFMPEG_ROOT}" CACHE PATH "FFmpeg root directory")
 
 message(STATUS "------------------------------------------------------")
 message(STATUS "  FFmpeg")
+message(STATUS "  Root:    ${FFMPEG_ROOT}")
 message(STATUS "  Include: ${FFMPEG_INCLUDE_DIR}")
 message(STATUS "  Library: ${FFMPEG_LIB_DIR}")
 message(STATUS "  Bin:     ${FFMPEG_BIN_DIR}")
