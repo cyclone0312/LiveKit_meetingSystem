@@ -87,6 +87,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${LIVEKIT_INCLUDE_DIR}
+    ${FFMPEG_INCLUDE_DIR}
 )
 
 # 使用 Imported Targets 链接（跨平台，由 FetchLiveKit.cmake 创建）
@@ -190,6 +191,7 @@ if(BUILD_TESTS)
     target_include_directories(MeetingAppLib PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${LIVEKIT_INCLUDE_DIR}
+        ${FFMPEG_INCLUDE_DIR}
     )
 
     target_link_libraries(MeetingAppLib PUBLIC
