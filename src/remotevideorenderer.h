@@ -45,6 +45,13 @@ public:
   Q_INVOKABLE void setExternalVideoSink(QVideoSink *sink);
 
   /**
+   * @brief 清空当前外部视频 Sink 的最后一帧
+   * 轨道 muted/unsubscribed 后，QVideoOutput 会保留上一帧；
+   * 需要显式推送空帧让界面及时回退到占位态。
+   */
+  Q_INVOKABLE void clearExternalVideoSink();
+
+  /**
    * @brief 获取当前外部视频 Sink（线程安全）
    * 用于在渲染器被销毁前保存 Sink，供重连后复用
    */

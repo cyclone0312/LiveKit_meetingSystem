@@ -6,12 +6,12 @@
 #include <QVariantList>
 
 // 前向声明
+// 指针使得你可以优雅地使用前置声明代替 #include，从此远离“循环包含报错”的噩梦。
 class LiveKitManager;
 class VideoCompositor;
 class MeetingRecorder;
 
-class MeetingController : public QObject
-{
+class MeetingController : public QObject {
   Q_OBJECT
 
   // 属性定义
@@ -42,8 +42,10 @@ class MeetingController : public QObject
   Q_PROPERTY(bool isConnected READ isConnected NOTIFY connectedChanged)
 
   // 视频录制属性
-  Q_PROPERTY(bool isVideoRecording READ isVideoRecording NOTIFY videoRecordingChanged)
-  Q_PROPERTY(int videoRecordingDuration READ videoRecordingDuration NOTIFY videoRecordingDurationChanged)
+  Q_PROPERTY(
+      bool isVideoRecording READ isVideoRecording NOTIFY videoRecordingChanged)
+  Q_PROPERTY(int videoRecordingDuration READ videoRecordingDuration NOTIFY
+                 videoRecordingDurationChanged)
 
   // 新增：暴露 LiveKitManager 给 QML
   Q_PROPERTY(LiveKitManager *liveKitManager READ liveKitManager CONSTANT)

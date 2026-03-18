@@ -4,6 +4,7 @@
 #include <QAbstractListModel>
 #include <QList>
 #include <QString>
+#include <QVariantList>
 #include <QVideoSink>
 
 struct Participant
@@ -24,6 +25,7 @@ class ParticipantModel : public QAbstractListModel
 {
     Q_OBJECT
     Q_PROPERTY(int count READ count NOTIFY countChanged)
+    Q_PROPERTY(QVariantList videoTiles READ videoTiles NOTIFY videoTilesChanged)
 
 public:
     enum ParticipantRoles
@@ -48,6 +50,7 @@ public:
     QHash<int, QByteArray> roleNames() const override;
 
     int count() const;
+    QVariantList videoTiles() const;
 
 public slots:
     void addParticipant(const QString &id, const QString &name, bool isHost = false, bool isLocal = false);
@@ -64,6 +67,7 @@ public slots:
 
 signals:
     void countChanged();
+    void videoTilesChanged();
 
 private:
     int findParticipantIndex(const QString &id) const;

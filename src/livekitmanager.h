@@ -13,9 +13,11 @@
 #define LIVEKITMANAGER_H
 
 #include <QNetworkAccessManager>
+#include <QDateTime>
 #include <QObject>
 #include <QPointer>
 #include <QString>
+#include <QTimer>
 #include <atomic>
 #include <memory>
 
@@ -204,6 +206,11 @@ public slots:
   void sendData(const QByteArray &data);
 
   /**
+   * @brief 生成聊天消息唯一 ID
+   */
+  Q_INVOKABLE QString generateChatMessageId() const;
+
+  /**
    * @brief 发布/取消发布摄像头轨道
    */
   void publishCamera();
@@ -225,12 +232,20 @@ public slots:
   void toggleScreenShare();
 
   /**
-   * @brief 设置远程参会者的视频 Sink（供 QML 调用）
-   * @param participantId 参会者 ID
+   * @brief 设置远程视频路由的视频 Sink（供 QML 调用）
+   * @param participantId 远端视频路由键，如 user::camera / user::screen
    * @param sink QML VideoOutput 的 videoSink
    */
   Q_INVOKABLE void setRemoteVideoSink(const QString &participantId,
                                       QVideoSink *sink);
+
+  /**
+   * @brief 仅当当前绑定的 sink 与期望值一致时才清理远端视频 sink
+   * @param participantId 远端视频路由键，如 user::camera / user::screen
+   * @param expectedSink 预期当前仍被绑定的 QML VideoOutput sink
+   */
+  Q_INVOKABLE void clearRemoteVideoSinkIfMatches(const QString &participantId,
+                                                 QVideoSink *expectedSink);
 
 private:
   /**
@@ -243,7 +258,11 @@ private:
 public slots:
 
   // 兼容旧接口
-  void sendChatMessage(const QString &message);
+  void sendChatMessage(const QString &message,
+                       const QString &messageId = QString());
+  void sendChatMessageAs(const QString &senderName, const QString &message,
+                         const QString &senderIdentity = QString(),
+                         const QString &messageId = QString());
   void updateMicState(bool enabled);
   void updateCameraState(bool enabled);
   void updateScreenShareState(bool enabled);
@@ -270,11 +289,13 @@ signals:
 
   // 轨道信号
   void trackSubscribed(const QString &participantIdentity,
-                       const QString &trackSid, int trackKind);
+                       const QString &trackSid, int trackKind,
+                       int trackSource);
   void trackUnsubscribed(const QString &participantIdentity,
-                         const QString &trackSid);
+                         const QString &trackSid, int trackKind,
+                         int trackSource);
   void trackMuted(const QString &participantIdentity, const QString &trackSid,
-                  bool muted);
+                  int trackKind, int trackSource, bool muted);
 
   // 本地媒体发布信号
   void cameraPublishedChanged();
@@ -286,8 +307,9 @@ signals:
   void participantCameraChanged(const QString &id, bool enabled);
   void participantScreenShareChanged(const QString &id, bool enabled);
   void participantHandRaiseChanged(const QString &id, bool raised);
-  void chatMessageReceived(const QString &senderId, const QString &senderName,
-                           const QString &message);
+  void chatMessageReceived(const QString &messageId, const QString &senderId,
+                           const QString &senderName, const QString &message,
+                           const QDateTime &timestamp);
   void dataMessageReceived(const QString &type, const QString &data);
 
   // 数据信号
@@ -315,6 +337,11 @@ private:
   void requestToken(const QString &roomName, const QString &userName);
   void connectToRoom(const QString &token);
   void setError(const QString &error);
+  void persistChatMessage(const QString &messageId, const QString &senderIdentity,
+                          const QString &senderName, const QString &message);
+  void startChatHistorySync();
+  void stopChatHistorySync();
+  void fetchChatHistory();
 
 private:
   friend class LiveKitRoomDelegate;
@@ -350,6 +377,8 @@ private:
   QString m_currentToken;
   QString m_errorMessage;
   QString m_userPassword; // 用户密码（用于 Token 请求）
+  QTimer *m_chatHistoryTimer = nullptr;
+  qint64 m_lastChatHistoryId = 0;
 
   // 待加入信息
   QString m_pendingRoom;
@@ -358,7 +387,7 @@ private:
   // SDK 初始化标志
   static bool s_sdkInitialized;
 
-  // 远程媒体渲染器
+  // 远程媒体渲染器（key: user::camera / user::screen）
   QMap<QString, std::shared_ptr<RemoteVideoRenderer>> m_remoteVideoRenderers;
   QMap<QString, std::shared_ptr<RemoteAudioPlayer>> m_remoteAudioPlayers;
 

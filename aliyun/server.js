@@ -469,6 +469,159 @@ app.post('/api/meeting/leave', async (req, res) => {
     }
 });
 
+// ==================== 房间聊天接口 ====================
+
+async function getChatMessageColumns() {
+    const [rows] = await pool.execute(`SHOW COLUMNS FROM meeting_chat_messages`);
+    return new Set(rows.map(row => row.Field));
+}
+
+function chatSelectColumns(columns) {
+    const senderNameExpr = columns.has('sender_name')
+        ? 'COALESCE(sender_name, username) AS sender_name'
+        : 'username AS sender_name';
+    const senderIdentityExpr = columns.has('sender_identity')
+        ? 'COALESCE(sender_identity, username) AS sender_identity'
+        : 'username AS sender_identity';
+    const clientMessageIdExpr = columns.has('client_message_id')
+        ? 'client_message_id'
+        : 'NULL AS client_message_id';
+
+    return [
+        'id',
+        'room_name',
+        'username',
+        senderNameExpr,
+        senderIdentityExpr,
+        clientMessageIdExpr,
+        'content',
+        'created_at'
+    ].join(', ');
+}
+
+/**
+ * POST /api/chat/send
+ * 发送房间聊天消息
+ * Body: { roomName, username, message }
+ */
+app.post('/api/chat/send', async (req, res) => {
+    const {
+        roomName,
+        username,
+        senderName,
+        senderIdentity,
+        clientMessageId,
+        message
+    } = req.body;
+    if (!roomName || !message || !(username || senderName)) {
+        return res.status(400).json({ success: false, error: '缺少 roomName、username/senderName 或 message' });
+    }
+
+    const trimmedMessage = String(message).trim();
+    const normalizedSenderName = String(senderName || username || '').trim();
+    const normalizedSenderIdentity = String(senderIdentity || username || senderName || '').trim();
+    const normalizedClientMessageId = String(clientMessageId || '').trim();
+
+    if (!trimmedMessage) {
+        return res.status(400).json({ success: false, error: '消息不能为空' });
+    }
+    if (!normalizedSenderName || !normalizedSenderIdentity) {
+        return res.status(400).json({ success: false, error: '发送者信息不能为空' });
+    }
+
+    try {
+        const columns = await getChatMessageColumns();
+        let insertedId = null;
+        try {
+            const insertColumns = ['room_name', 'username', 'content'];
+            const insertValues = [roomName, normalizedSenderName, trimmedMessage];
+
+            if (columns.has('sender_name')) {
+                insertColumns.push('sender_name');
+                insertValues.push(normalizedSenderName);
+            }
+            if (columns.has('sender_identity')) {
+                insertColumns.push('sender_identity');
+                insertValues.push(normalizedSenderIdentity);
+            }
+            if (columns.has('client_message_id')) {
+                insertColumns.push('client_message_id');
+                insertValues.push(normalizedClientMessageId || null);
+            }
+
+            const placeholders = insertColumns.map(() => '?').join(', ');
+            const [result] = await pool.execute(
+                `INSERT INTO meeting_chat_messages (${insertColumns.join(', ')})
+                 VALUES (${placeholders})`,
+                insertValues
+            );
+            insertedId = result.insertId;
+        } catch (e) {
+            if (!(normalizedClientMessageId && e && e.code === 'ER_DUP_ENTRY')) {
+                throw e;
+            }
+        }
+
+        const selectColumns = chatSelectColumns(columns);
+        const [rows] = await pool.execute(
+            `SELECT ${selectColumns}
+             FROM meeting_chat_messages
+             WHERE ${normalizedClientMessageId && columns.has('client_message_id')
+                ? 'room_name = ? AND client_message_id = ?'
+                : 'id = ?'}
+             ORDER BY id DESC
+             LIMIT 1`,
+            normalizedClientMessageId && columns.has('client_message_id')
+                ? [roomName, normalizedClientMessageId]
+                : [insertedId]
+        );
+
+        res.json({
+            success: true,
+            message: rows[0] || {
+                id: insertedId,
+                room_name: roomName,
+                username: normalizedSenderName,
+                sender_name: normalizedSenderName,
+                sender_identity: normalizedSenderIdentity,
+                client_message_id: normalizedClientMessageId || null,
+                content: trimmedMessage,
+                created_at: new Date(),
+            }
+        });
+    } catch (e) {
+        console.error('[Chat] send error:', e.message);
+        res.status(500).json({ success: false, error: '发送消息失败: ' + e.message });
+    }
+});
+
+/**
+ * GET /api/chat/history?roomName=xxx&afterId=0
+ * 获取某个房间的聊天记录
+ */
+app.get('/api/chat/history', async (req, res) => {
+    const { roomName, afterId = 0 } = req.query;
+    if (!roomName) {
+        return res.status(400).json({ success: false, error: '缺少 roomName' });
+    }
+
+    try {
+        const columns = await getChatMessageColumns();
+        const [rows] = await pool.execute(
+            `SELECT ${chatSelectColumns(columns)}
+             FROM meeting_chat_messages
+             WHERE room_name = ? AND id > ?
+             ORDER BY id ASC
+             LIMIT 200`,
+            [roomName, Number(afterId) || 0]
+        );
+        res.json({ success: true, messages: rows });
+    } catch (e) {
+        console.error('[Chat] history error:', e.message);
+        res.status(500).json({ success: false, error: '获取聊天记录失败: ' + e.message });
+    }
+});
+
 // ==================== AI 智能体接口 ====================
 
 /**
@@ -755,6 +908,80 @@ app.post('/api/history/deleteAll', async (req, res) => {
         console.log('[Schedule] scheduled_meetings 表已就绪');
     } catch (e) {
         console.error('[Schedule] 建表失败:', e.message);
+    }
+})();
+
+// 自动创建 meeting_chat_messages 表
+(async () => {
+    try {
+        await pool.execute(`
+            CREATE TABLE IF NOT EXISTS meeting_chat_messages (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                room_name VARCHAR(100) NOT NULL,
+                username VARCHAR(100) NOT NULL,
+                content TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_room_id (room_name, id),
+                INDEX idx_room_created (room_name, created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+        console.log('[Chat] meeting_chat_messages 表已就绪');
+    } catch (e) {
+        console.error('[Chat] 建表失败:', e.message);
+    }
+})();
+
+// 补齐聊天表字段，支持消息去重和发送者身份保留
+(async () => {
+    async function ensureColumn(columnName, definition) {
+        const [rows] = await pool.execute(
+            `SHOW COLUMNS FROM meeting_chat_messages LIKE ?`,
+            [columnName]
+        );
+        if (rows.length === 0) {
+            await pool.execute(
+                `ALTER TABLE meeting_chat_messages ADD COLUMN ${columnName} ${definition}`
+            );
+            console.log(`[Chat] 已添加字段 ${columnName}`);
+        }
+    }
+
+    try {
+        await pool.execute(`
+            CREATE TABLE IF NOT EXISTS meeting_chat_messages (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                room_name VARCHAR(100) NOT NULL,
+                username VARCHAR(100) NOT NULL,
+                content TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_room_id (room_name, id),
+                INDEX idx_room_created (room_name, created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        `);
+        await ensureColumn('sender_name', 'VARCHAR(100) NULL AFTER username');
+        await ensureColumn('sender_identity', 'VARCHAR(100) NULL AFTER sender_name');
+        await ensureColumn('client_message_id', 'VARCHAR(128) NULL AFTER sender_identity');
+
+        await pool.execute(
+            `UPDATE meeting_chat_messages
+             SET sender_name = COALESCE(sender_name, username),
+                 sender_identity = COALESCE(sender_identity, username)
+             WHERE sender_name IS NULL OR sender_identity IS NULL`
+        );
+
+        try {
+            await pool.execute(
+                `CREATE UNIQUE INDEX idx_room_client_msg
+                 ON meeting_chat_messages (room_name, client_message_id)`
+            );
+            console.log('[Chat] 已添加 idx_room_client_msg 唯一索引');
+        } catch (e) {
+            if (e.code !== 'ER_DUP_KEYNAME' && e.code !== 'ER_DUP_ENTRY') {
+                throw e;
+            }
+        }
+    } catch (e) {
+        console.error('[Chat] 聊天表迁移失败:', e.message);
     }
 })();
 

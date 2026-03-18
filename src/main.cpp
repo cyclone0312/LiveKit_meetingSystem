@@ -100,11 +100,28 @@ int main(int argc, char *argv[])
   // 收到远程聊天消息 → 添加到 ChatModel 显示
   QObject::connect(meetingController.liveKitManager(),
                    &LiveKitManager::chatMessageReceived, &chatModel,
-                   [&chatModel](const QString &senderId,
+                   [&chatModel, &meetingController](const QString &messageId,
+                                const QString &senderId,
                                 const QString &senderName,
-                                const QString &message)
+                                const QString &message,
+                                const QDateTime &timestamp)
                    {
-                     chatModel.addMessage(senderId, senderName, message, false);
+                     const QString currentUser =
+                         meetingController.liveKitManager()->currentUser();
+                     const bool isSelf = senderId == currentUser;
+                     const bool isLocalOrigin =
+                         senderId == currentUser ||
+                         senderId == ("ai:" + currentUser);
+                     if (isLocalOrigin &&
+                         chatModel.registerRecentMessageAlias(
+                             messageId, senderId, senderName, message, isSelf,
+                             timestamp))
+                     {
+                       return;
+                     }
+                     chatModel.addMessageWithIdAndTimestamp(
+                         messageId, senderId, senderName, message, isSelf,
+                         timestamp);
                    });
 
   // ========== 信号连接：AI 助手 ==========
@@ -173,9 +190,11 @@ int main(int argc, char *argv[])
   LiveKitManager *lkm = meetingController.liveKitManager();
   QObject::connect(lkm, &LiveKitManager::trackSubscribed, &audioMixer,
                    [lkm, &audioMixer](const QString &participantIdentity,
-                                      const QString &trackSid, int trackKind)
+                                      const QString &trackSid, int trackKind,
+                                      int trackSource)
                    {
                      Q_UNUSED(trackSid)
+                     Q_UNUSED(trackSource)
                      // KIND_AUDIO = 1
                      if (trackKind != 1)
                        return;
@@ -231,17 +250,19 @@ int main(int argc, char *argv[])
   QObject::connect(
       lkm, &LiveKitManager::trackSubscribed, vc,
       [lkm, vc](const QString &participantIdentity, const QString &trackSid,
-                int trackKind)
+                int trackKind, int trackSource)
       {
         Q_UNUSED(trackSid)
-        // KIND_VIDEO = 0
-        if (trackKind != 0)
+        const QString renderKey =
+            participantIdentity + "::" + (trackSource == 3 ? "screen" : "camera");
+        // KIND_VIDEO = 2
+        if (trackKind != 2)
           return;
-        QTimer::singleShot(200, vc, [lkm, participantIdentity, vc]()
+        QTimer::singleShot(200, vc, [lkm, renderKey, vc]()
                            {
-          if (lkm->remoteVideoRenderers().contains(participantIdentity)) {
+          if (lkm->remoteVideoRenderers().contains(renderKey)) {
             auto renderer =
-                lkm->remoteVideoRenderers()[participantIdentity];
+                lkm->remoteVideoRenderers()[renderKey];
             if (renderer) {
               QObject::connect(
                   renderer.get(), &RemoteVideoRenderer::videoFrameReady,
@@ -250,14 +271,18 @@ int main(int argc, char *argv[])
                     vc->feedFrame(pid, frame, pid);
                   });
               qDebug() << "[main] 远程视频已连接到 VideoCompositor:"
-                       << participantIdentity;
+                       << renderKey;
             }
           } });
       });
 
   // 参会者离开 → 从 VideoCompositor 移除
   QObject::connect(lkm, &LiveKitManager::participantLeft, vc,
-                   &VideoCompositor::removeParticipant);
+                   [vc](const QString &participantIdentity)
+                   {
+                     vc->removeParticipant(participantIdentity + "::camera");
+                     vc->removeParticipant(participantIdentity + "::screen");
+                   });
 
   // AudioMixer 混合音频 → MeetingRecorder（录制音轨）
   QObject::connect(&audioMixer, &AudioMixer::mixedAudioReady, mr,

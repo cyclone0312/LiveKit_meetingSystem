@@ -1,6 +1,35 @@
 #include "participantmodel.h"
-#include <QRandomGenerator>
 #include <QDebug>
+#include <QRandomGenerator>
+#include <QVariantMap>
+
+namespace {
+
+QString streamKeyFor(const QString &participantId, const QString &streamType)
+{
+    return participantId + "::" + streamType;
+}
+
+QVariantMap makeVideoTile(const Participant &participant, const QString &streamType, bool active)
+{
+    QVariantMap tile;
+    tile["tileId"] = streamKeyFor(participant.id, streamType);
+    tile["participantId"] = participant.id;
+    tile["name"] = participant.name;
+    tile["isMicOn"] = participant.isMicOn;
+    tile["isHost"] = participant.isHost;
+    tile["isHandRaised"] = participant.isHandRaised;
+    tile["isLocal"] = participant.isLocal;
+    tile["streamType"] = streamType;
+    tile["streamLabel"] = streamType == "screen" ? QStringLiteral("屏幕共享")
+                                                 : QStringLiteral("摄像头");
+    tile["isScreenTile"] = (streamType == "screen");
+    tile["streamActive"] = active;
+    tile["renderKey"] = streamKeyFor(participant.id, streamType);
+    return tile;
+}
+
+} // namespace
 
 ParticipantModel::ParticipantModel(QObject *parent)
     : QAbstractListModel(parent)
@@ -69,6 +98,31 @@ int ParticipantModel::count() const
     return m_participants.count();
 }
 
+QVariantList ParticipantModel::videoTiles() const
+{
+    QVariantList tiles;
+
+    for (const Participant &participant : m_participants)
+    {
+        if (participant.isCameraOn)
+        {
+            tiles.append(makeVideoTile(participant, "camera", true));
+        }
+
+        if (participant.isScreenSharing)
+        {
+            tiles.append(makeVideoTile(participant, "screen", true));
+        }
+
+        if (!participant.isCameraOn && !participant.isScreenSharing)
+        {
+            tiles.append(makeVideoTile(participant, "camera", false));
+        }
+    }
+
+    return tiles;
+}
+
 void ParticipantModel::addParticipant(const QString &id, const QString &name, bool isHost, bool isLocal)
 {
     // 检查是否已存在
@@ -81,8 +135,8 @@ void ParticipantModel::addParticipant(const QString &id, const QString &name, bo
     participant.id = id;
     participant.name = name;
     participant.avatarUrl = "";
-    participant.isMicOn = isLocal ? false : QRandomGenerator::global()->bounded(2) == 1;
-    participant.isCameraOn = isLocal ? false : QRandomGenerator::global()->bounded(2) == 1;
+    participant.isMicOn = false;
+    participant.isCameraOn = false;
     participant.isScreenSharing = false;
     participant.isHost = isHost;
     participant.isHandRaised = false;
@@ -93,6 +147,7 @@ void ParticipantModel::addParticipant(const QString &id, const QString &name, bo
 
     endInsertRows();
     emit countChanged();
+    emit videoTilesChanged();
 }
 
 void ParticipantModel::removeParticipant(const QString &id)
@@ -105,6 +160,7 @@ void ParticipantModel::removeParticipant(const QString &id)
     m_participants.removeAt(index);
     endRemoveRows();
     emit countChanged();
+    emit videoTilesChanged();
 }
 
 void ParticipantModel::updateParticipant(const QString &id, bool isMicOn, bool isCameraOn)
@@ -118,6 +174,7 @@ void ParticipantModel::updateParticipant(const QString &id, bool isMicOn, bool i
 
     QModelIndex modelIndex = createIndex(index, 0);
     emit dataChanged(modelIndex, modelIndex, {IsMicOnRole, IsCameraOnRole});
+    emit videoTilesChanged();
 }
 
 void ParticipantModel::updateParticipantCamera(const QString &id, bool isCameraOn)
@@ -134,6 +191,7 @@ void ParticipantModel::updateParticipantCamera(const QString &id, bool isCameraO
 
     QModelIndex modelIndex = createIndex(index, 0);
     emit dataChanged(modelIndex, modelIndex, {IsCameraOnRole});
+    emit videoTilesChanged();
 }
 
 void ParticipantModel::setParticipantHandRaised(const QString &id, bool raised)
@@ -146,6 +204,7 @@ void ParticipantModel::setParticipantHandRaised(const QString &id, bool raised)
 
     QModelIndex modelIndex = createIndex(index, 0);
     emit dataChanged(modelIndex, modelIndex, {IsHandRaisedRole});
+    emit videoTilesChanged();
 }
 
 void ParticipantModel::setParticipantScreenSharing(const QString &id, bool sharing)
@@ -158,6 +217,7 @@ void ParticipantModel::setParticipantScreenSharing(const QString &id, bool shari
 
     QModelIndex modelIndex = createIndex(index, 0);
     emit dataChanged(modelIndex, modelIndex, {IsScreenSharingRole});
+    emit videoTilesChanged();
 }
 
 void ParticipantModel::setParticipantVideoSink(const QString &id, QVideoSink *sink)
@@ -185,6 +245,7 @@ void ParticipantModel::clear()
     m_participants.clear();
     endResetModel();
     emit countChanged();
+    emit videoTilesChanged();
 }
 
 void ParticipantModel::addDemoParticipants()

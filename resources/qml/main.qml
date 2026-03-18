@@ -48,6 +48,11 @@ ApplicationWindow {
             participantModel.updateParticipant("self", meetingController.isMicOn, meetingController.isCameraOn)
             console.log("[main.qml] 麦克风状态变化:", meetingController.isMicOn)
         }
+
+        function onScreenSharingChanged() {
+            participantModel.setParticipantScreenSharing("self", meetingController.isScreenSharing)
+            console.log("[main.qml] 屏幕共享状态变化:", meetingController.isScreenSharing)
+        }
     }
     
     // 监听 LiveKitManager 的参会者加入/离开事件
@@ -65,21 +70,44 @@ ApplicationWindow {
         }
         
         // 【关键修复】当远程视频轨道订阅时，更新参会者的摄像头状态
-        function onTrackSubscribed(participantIdentity, trackSid, trackKind) {
-            console.log("[main.qml] 轨道订阅:", participantIdentity, trackSid, "kind:", trackKind)
+        function onTrackSubscribed(participantIdentity, trackSid, trackKind, trackSource) {
+            console.log("[main.qml] 轨道订阅:", participantIdentity, trackSid, "kind:", trackKind, "source:", trackSource)
             // trackKind: 1 = Audio, 2 = Video
+            // trackSource: 1 = Camera, 3 = ScreenShare
             if (trackKind === 2) {
-                // 视频轨道订阅，设置 isCameraOn = true
-                console.log("[main.qml] 更新参会者摄像头状态为开启:", participantIdentity)
-                participantModel.updateParticipantCamera(participantIdentity, true)
+                if (trackSource === 1) {
+                    console.log("[main.qml] 更新参会者摄像头状态为开启:", participantIdentity)
+                    participantModel.updateParticipantCamera(participantIdentity, true)
+                } else if (trackSource === 3) {
+                    console.log("[main.qml] 更新参会者屏幕共享状态为开启:", participantIdentity)
+                    participantModel.setParticipantScreenSharing(participantIdentity, true)
+                }
             }
         }
         
         // 【关键修复】当远程视频轨道取消订阅时，更新参会者的摄像头状态
-        function onTrackUnsubscribed(participantIdentity, trackSid) {
-            console.log("[main.qml] 轨道取消订阅:", participantIdentity, trackSid)
-            // 可以在这里设置 isCameraOn = false，但需要判断是否是视频轨道
-            // 暂时不处理，因为参会者可能只是暂时关闭摄像头
+        function onTrackUnsubscribed(participantIdentity, trackSid, trackKind, trackSource) {
+            console.log("[main.qml] 轨道取消订阅:", participantIdentity, trackSid, "kind:", trackKind, "source:", trackSource)
+            if (trackKind === 2) {
+                if (trackSource === 1) {
+                    participantModel.updateParticipantCamera(participantIdentity, false)
+                } else if (trackSource === 3) {
+                    participantModel.setParticipantScreenSharing(participantIdentity, false)
+                }
+            }
+        }
+
+        function onTrackMuted(participantIdentity, trackSid, trackKind, trackSource, muted) {
+            console.log("[main.qml] 轨道静音状态变化:", participantIdentity, trackSid, "kind:", trackKind, "source:", trackSource, "muted:", muted)
+            if (trackKind !== 2) {
+                return
+            }
+
+            if (trackSource === 1) {
+                participantModel.updateParticipantCamera(participantIdentity, !muted)
+            } else if (trackSource === 3) {
+                participantModel.setParticipantScreenSharing(participantIdentity, !muted)
+            }
         }
         
         function onConnected() {
@@ -102,15 +130,6 @@ ApplicationWindow {
             }
         }
         
-        function onRemoteVideoSinkReady(participantId, sink) {
-            console.log("[main.qml] 远程视频 Sink 就绪:", participantId, sink)
-            participantModel.setParticipantVideoSink(participantId, sink)
-        }
-        
-        function onRemoteVideoSinkRemoved(participantId) {
-            console.log("[main.qml] 远程视频 Sink 移除:", participantId)
-            participantModel.setParticipantVideoSink(participantId, null)
-        }
     }
     
     // 页面堆栈

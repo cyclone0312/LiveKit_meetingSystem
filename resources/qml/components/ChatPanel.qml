@@ -207,10 +207,17 @@ Item {
                         function sendMessage() {
                             if (text.trim().length > 0) {
                                 var msg = text.trim()
+                                var messageId = liveKitManager.generateChatMessageId()
                                 // 1. 本地显示消息
-                                chatModel.sendMessage(msg, meetingController.userName)
+                                chatModel.addMessageWithId(
+                                    messageId,
+                                    meetingController.userName,
+                                    meetingController.userName,
+                                    msg,
+                                    true
+                                )
                                 // 2. 通过 LiveKit 数据通道广播给其他参会者
-                                liveKitManager.sendChatMessage(msg)
+                                liveKitManager.sendChatMessage(msg, messageId)
                                 
                                 // 3. 检测 @小会，触发 AI 回复
                                 if (msg.indexOf("@小会") !== -1) {
@@ -281,5 +288,23 @@ Item {
         }
         
         onClicked: chatModel.simulateIncomingMessage()
+    }
+
+    Connections {
+        target: aiAssistant
+
+        function onAiReplyReceived(reply) {
+            if (!reply || reply.trim().length === 0) {
+                return
+            }
+            var messageId = liveKitManager.generateChatMessageId()
+            // 统一走 LiveKit/服务端回流，避免本地先插入再被历史同步补一条
+            liveKitManager.sendChatMessageAs(
+                "小会",
+                reply,
+                "ai:" + meetingController.userName,
+                messageId
+            )
+        }
     }
 }

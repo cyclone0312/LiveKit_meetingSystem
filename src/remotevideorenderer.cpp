@@ -30,6 +30,22 @@ void RemoteVideoRenderer::setExternalVideoSink(QVideoSink *sink)
   qDebug() << "[RemoteVideoRenderer] 设置外部视频 Sink:" << sink;
 }
 
+void RemoteVideoRenderer::clearExternalVideoSink()
+{
+  QPointer<QVideoSink> sinkPointer;
+  {
+    QMutexLocker locker(&m_mutex);
+    sinkPointer = m_externalSink;
+  }
+
+  if (sinkPointer)
+  {
+    sinkPointer->setVideoFrame(QVideoFrame());
+    qDebug() << "[RemoteVideoRenderer] 已清空外部视频 Sink, participantId="
+             << m_participantId;
+  }
+}
+
 void RemoteVideoRenderer::start()
 {
   if (m_running.load())
@@ -80,6 +96,7 @@ void RemoteVideoRenderer::stop()
 {
   if (!m_running.load())
   {
+    clearExternalVideoSink();
     return;
   }
 
@@ -98,6 +115,8 @@ void RemoteVideoRenderer::stop()
   {
     m_renderThread.join();
   }
+
+  clearExternalVideoSink();
 }
 
 void RemoteVideoRenderer::renderLoop()

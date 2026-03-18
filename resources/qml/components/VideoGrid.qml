@@ -2,46 +2,26 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 
-/**
- * VideoGrid - 参会者视频网格布局
- * 
- * 【GridView Delegate 作用域问题】
- * GridView 的 delegate 是动态创建的组件，有独立的作用域。
- * delegate 内部无法直接访问全局变量（如 main.cpp 中 setContextProperty 注册的 mediaCapture）。
- * 
- * 解决方案：
- * 1. 在 VideoGrid 中定义属性 mediaCaptureRef 保存全局 mediaCapture 的引用
- * 2. delegate 通过 videoGrid.mediaCaptureRef 访问（通过父组件 id 访问）
- * 
- * 错误示例（会得到 null）：
- *   delegate: VideoItem { mediaCapture: mediaCapture }  // ❌ delegate 内访问全局变量失败
- * 
- * 正确示例：
- *   delegate: VideoItem { mediaCapture: videoGrid.mediaCaptureRef }  // ✅ 通过父组件属性传递
- */
 Item {
     id: videoGrid
-    
-    // 【关键】将全局 mediaCapture 保存为本组件的属性
-    // 这样 delegate 就可以通过 videoGrid.mediaCaptureRef 访问
+
     property var mediaCaptureRef: mediaCapture
-    
-    // 【新增】屏幕共享引用，供本地用户显示屏幕共享预览
     property var screenCaptureRef: liveKitManager ? liveKitManager.screenCapture : null
-    
-    property int columns: calculateColumns()
-    property int rows: calculateRows()
-    
-    function calculateColumns() {
-        var count = participantModel.count
+    property var videoTiles: participantModel ? participantModel.videoTiles : []
+    property int tileCount: videoTiles.length
+    property string focusedTileId: ""
+    property var focusedTile: findTileById(focusedTileId)
+    property bool hasFocusedTile: focusedTile !== null
+    property var gridTiles: hasFocusedTile ? [] : videoTiles
+
+    function calculateColumns(count) {
         if (count <= 1) return 1
         if (count <= 4) return 2
         if (count <= 9) return 3
         return 4
     }
-    
-    function calculateRows() {
-        var count = participantModel.count
+
+    function calculateRows(count) {
         if (count <= 1) return 1
         if (count <= 2) return 1
         if (count <= 4) return 2
@@ -49,62 +29,212 @@ Item {
         if (count <= 9) return 3
         return Math.ceil(count / 4)
     }
-    
+
+    function findTileById(tileId) {
+        if (!tileId) {
+            return null
+        }
+
+        for (var i = 0; i < videoTiles.length; ++i) {
+            if (videoTiles[i].tileId === tileId) {
+                return videoTiles[i]
+            }
+        }
+
+        return null
+    }
+
+    function remainingTiles() {
+        var tiles = []
+        for (var i = 0; i < videoTiles.length; ++i) {
+            var tile = videoTiles[i]
+            if (tile.tileId !== focusedTileId) {
+                tiles.push(tile)
+            }
+        }
+        return tiles
+    }
+
+    function toggleFocus(tileId) {
+        focusedTileId = focusedTileId === tileId ? "" : tileId
+    }
+
+    onVideoTilesChanged: {
+        if (focusedTileId !== "" && findTileById(focusedTileId) === null) {
+            focusedTileId = ""
+        }
+    }
+
     GridView {
         id: gridView
         anchors.fill: parent
         anchors.margins: 4
-        
-        cellWidth: width / columns
-        cellHeight: height / rows
-        
-        model: participantModel
-        
-        delegate: VideoItem {
-            id: videoItemDelegate
-            width: gridView.cellWidth - 8
-            height: gridView.cellHeight - 8
-            
-            participantId: model.participantId  // 传递参会者 ID
-            participantName: model.name
-            isMicOn: model.isLocal ? meetingController.isMicOn : model.isMicOn
-            isCameraOn: model.isLocal ? meetingController.isCameraOn : model.isCameraOn
-            isHost: model.isHost
-            isHandRaised: model.isHandRaised
-            // 【修复】本地用户的屏幕共享状态从 meetingController 获取
-            isScreenSharing: model.isLocal ? meetingController.isScreenSharing : model.isScreenSharing
-            isLocalUser: model.isLocal  // 标记是否为本地用户
-            
-            // 【重要】通过 videoGrid 的属性传递 mediaCapture，而非直接引用全局变量
-            // 只有本地用户需要 mediaCapture 来显示本地摄像头画面
-            mediaCapture: model.isLocal ? videoGrid.mediaCaptureRef : null
-            
-            // 【新增】传递 screenCapture 供本地屏幕共享预览
-            screenCapture: model.isLocal ? videoGrid.screenCaptureRef : null
+        visible: !videoGrid.hasFocusedTile
+
+        readonly property int gridColumns: videoGrid.calculateColumns(videoGrid.tileCount)
+        readonly property int gridRows: videoGrid.calculateRows(videoGrid.tileCount)
+
+        cellWidth: width / Math.max(gridColumns, 1)
+        cellHeight: height / Math.max(gridRows, 1)
+        model: videoGrid.gridTiles
+
+        delegate: Item {
+            width: gridView.cellWidth
+            height: gridView.cellHeight
+
+            required property var modelData
+
+            VideoItem {
+                anchors.fill: parent
+                anchors.margins: 4
+
+                tileId: modelData.tileId
+                participantId: modelData.participantId
+                participantName: modelData.name
+                streamType: modelData.streamType
+                streamLabel: modelData.streamLabel
+                remoteRenderKey: modelData.renderKey
+                isMicOn: modelData.isMicOn
+                isHost: modelData.isHost
+                isHandRaised: modelData.isHandRaised
+                isStreamActive: modelData.streamActive
+                isLocalUser: modelData.isLocal
+                isFocused: videoGrid.focusedTileId === modelData.tileId
+                mediaCapture: modelData.isLocal ? videoGrid.mediaCaptureRef : null
+                screenCapture: modelData.isLocal ? videoGrid.screenCaptureRef : null
+
+                onToggleFocusRequested: function(requestedTileId) {
+                    videoGrid.toggleFocus(requestedTileId)
+                }
+            }
         }
-        
-        // 空状态
+    }
+
+    Item {
+        id: focusedLayout
+        anchors.fill: parent
+        anchors.margins: 4
+        visible: videoGrid.hasFocusedTile
+
+        readonly property var sideTiles: videoGrid.remainingTiles()
+        readonly property int sideTileCount: sideTiles.length
+        readonly property int sideWidth: sideTileCount > 0 ? Math.min(width * 0.28, 300) : 0
+
         Item {
-            anchors.fill: parent
-            visible: participantModel.count === 0
-            
+            id: featuredTileContainer
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            anchors.right: sideBar.visible ? sideBar.left : parent.right
+            anchors.rightMargin: sideBar.visible ? 10 : 0
+
+            VideoItem {
+                anchors.fill: parent
+
+                tileId: videoGrid.focusedTile ? videoGrid.focusedTile.tileId : ""
+                participantId: videoGrid.focusedTile ? videoGrid.focusedTile.participantId : ""
+                participantName: videoGrid.focusedTile ? videoGrid.focusedTile.name : ""
+                streamType: videoGrid.focusedTile ? videoGrid.focusedTile.streamType : "camera"
+                streamLabel: videoGrid.focusedTile ? videoGrid.focusedTile.streamLabel : "摄像头"
+                remoteRenderKey: videoGrid.focusedTile ? videoGrid.focusedTile.renderKey : ""
+                isMicOn: videoGrid.focusedTile ? videoGrid.focusedTile.isMicOn : false
+                isHost: videoGrid.focusedTile ? videoGrid.focusedTile.isHost : false
+                isHandRaised: videoGrid.focusedTile ? videoGrid.focusedTile.isHandRaised : false
+                isStreamActive: videoGrid.focusedTile ? videoGrid.focusedTile.streamActive : false
+                isLocalUser: videoGrid.focusedTile ? videoGrid.focusedTile.isLocal : false
+                isFocused: true
+                mediaCapture: videoGrid.focusedTile && videoGrid.focusedTile.isLocal ? videoGrid.mediaCaptureRef : null
+                screenCapture: videoGrid.focusedTile && videoGrid.focusedTile.isLocal ? videoGrid.screenCaptureRef : null
+
+                onToggleFocusRequested: function(requestedTileId) {
+                    videoGrid.toggleFocus(requestedTileId)
+                }
+            }
+        }
+
+        Rectangle {
+            id: sideBar
+            anchors.top: parent.top
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            width: focusedLayout.sideWidth
+            radius: 10
+            color: "#0F172ACC"
+            border.color: "#FFFFFF14"
+            border.width: 1
+            visible: focusedLayout.sideTileCount > 0
+        }
+
+        Flickable {
+            anchors.fill: sideBar
+            anchors.margins: 8
+            clip: true
+            contentWidth: width
+            contentHeight: sideColumn.height
+            visible: sideBar.visible
+
             Column {
-                anchors.centerIn: parent
-                spacing: 16
-                
-                Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    text: "📹"
-                    font.pixelSize: 64
-                    opacity: 0.5
+                id: sideColumn
+                width: parent.width
+                spacing: 8
+
+                Repeater {
+                    model: focusedLayout.sideTiles
+
+                    delegate: Item {
+                        width: sideColumn.width
+                        height: Math.max(120, sideColumn.width * 0.62)
+
+                        required property var modelData
+
+                        VideoItem {
+                            anchors.fill: parent
+
+                            tileId: modelData.tileId
+                            participantId: modelData.participantId
+                            participantName: modelData.name
+                            streamType: modelData.streamType
+                            streamLabel: modelData.streamLabel
+                            remoteRenderKey: modelData.renderKey
+                            isMicOn: modelData.isMicOn
+                            isHost: modelData.isHost
+                            isHandRaised: modelData.isHandRaised
+                            isStreamActive: modelData.streamActive
+                            isLocalUser: modelData.isLocal
+                            isFocused: false
+                            mediaCapture: modelData.isLocal ? videoGrid.mediaCaptureRef : null
+                            screenCapture: modelData.isLocal ? videoGrid.screenCaptureRef : null
+
+                            onToggleFocusRequested: function(requestedTileId) {
+                                videoGrid.toggleFocus(requestedTileId)
+                            }
+                        }
+                    }
                 }
-                
-                Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    text: "等待参会者加入..."
-                    font.pixelSize: 16
-                    color: "#808090"
-                }
+            }
+        }
+    }
+
+    Item {
+        anchors.fill: parent
+        visible: videoGrid.tileCount === 0
+
+        Column {
+            anchors.centerIn: parent
+            spacing: 16
+
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: "📹"
+                font.pixelSize: 64
+                opacity: 0.5
+            }
+
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: "等待参会者加入..."
+                font.pixelSize: 16
+                color: "#808090"
             }
         }
     }

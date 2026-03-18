@@ -120,6 +120,34 @@ TEST_F(ChatModelTest, MultipleUnreadMessages)
     EXPECT_EQ(model->unreadCount(), 3);
 }
 
+TEST_F(ChatModelTest, DuplicateExternalMessageIdIgnored)
+{
+    const QDateTime timestamp = QDateTime::currentDateTime();
+
+    model->addMessageWithIdAndTimestamp("chat_123", "user1", "张三", "你好",
+                                        false, timestamp);
+    model->addMessageWithIdAndTimestamp("chat_123", "user1", "张三", "你好",
+                                        false, timestamp);
+
+    EXPECT_EQ(model->count(), 1);
+    EXPECT_EQ(model->unreadCount(), 1);
+}
+
+TEST_F(ChatModelTest, RecentAliasForLocalMessageIgnored)
+{
+    const QDateTime timestamp = QDateTime::currentDateTime();
+
+    model->addMessageWithId("local_1", "self", "我", "@小会 测试", true);
+    EXPECT_TRUE(model->registerRecentMessageAlias("db:1", "self", "我",
+                                                  "@小会 测试", true,
+                                                  timestamp));
+
+    model->addMessageWithIdAndTimestamp("db:1", "self", "我", "@小会 测试",
+                                        true, timestamp);
+
+    EXPECT_EQ(model->count(), 1);
+}
+
 // ==================== 系统消息测试 ====================
 
 TEST_F(ChatModelTest, AddSystemMessage)

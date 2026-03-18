@@ -19,15 +19,25 @@ import QtMultimedia
  */
 Rectangle {
     id: videoItem
+
+    signal toggleFocusRequested(string tileId)
     
+    property string tileId: ""
     property string participantId: ""  // 参会者 ID
     property string participantName: ""
+    property string streamType: "camera"
+    property string streamLabel: "摄像头"
+    property string remoteRenderKey: ""
     property bool isMicOn: false
-    property bool isCameraOn: false
     property bool isHost: false
     property bool isHandRaised: false
-    property bool isScreenSharing: false
+    property bool isStreamActive: false
     property bool isLocalUser: false  // 是否是本地用户
+    property bool isFocused: false
+    property string lastBoundRenderKey: ""
+    property var lastBoundRemoteSink: null
+    readonly property bool isScreenTile: streamType === "screen"
+    readonly property int streamSource: isScreenTile ? 3 : 1
     
     // 【重要】MediaCapture 对象引用，必须从父组件传入
     // 在 GridView 的 delegate 中无法直接访问全局变量，会得到 null
@@ -39,34 +49,75 @@ Rectangle {
     
     radius: 8
     color: "#252542"
-    border.color: isScreenSharing ? "#1E90FF" : "transparent"
-    border.width: isScreenSharing ? 2 : 0
+    border.color: isScreenTile ? "#1E90FF" : "transparent"
+    border.width: isScreenTile ? 2 : 0
     
     // 【关键】组件销毁时停止所有定时器，防止定时器在组件销毁后触发导致崩溃
     Component.onDestruction: {
         bindVideoSinkTimer.stop()
+        bindScreenShareVideoSinkTimer.stop()
         bindRemoteVideoSinkTimer.stop()
+        releaseRemoteVideoSink()
+    }
+
+    function scheduleLocalVideoBinding() {
+        if (!isLocalUser || !isStreamActive) {
+            return
+        }
+
+        if (isScreenTile) {
+            bindScreenShareVideoSinkTimer.schedule()
+        } else {
+            bindVideoSinkTimer.schedule()
+        }
+    }
+
+    function bindRemoteVideoSink() {
+        if (isLocalUser || remoteRenderKey === "" || !remoteVideoOutput || !remoteVideoOutput.videoSink) {
+            return
+        }
+
+        liveKitManager.setRemoteVideoSink(remoteRenderKey, remoteVideoOutput.videoSink)
+        lastBoundRenderKey = remoteRenderKey
+        lastBoundRemoteSink = remoteVideoOutput.videoSink
+    }
+
+    function releaseRemoteVideoSink() {
+        if (isLocalUser || lastBoundRenderKey === "") {
+            return
+        }
+
+        if (lastBoundRemoteSink) {
+            liveKitManager.clearRemoteVideoSinkIfMatches(lastBoundRenderKey, lastBoundRemoteSink)
+        }
+        lastBoundRenderKey = ""
+        lastBoundRemoteSink = null
     }
     
-    // 监听本地 isCameraOn 属性变化（用户点击开启摄像头）
-    onIsCameraOnChanged: {
-        console.log("[VideoItem] onIsCameraOnChanged: isLocalUser=", isLocalUser, "isCameraOn=", isCameraOn, "mediaCapture=", mediaCapture ? "有效" : "null")
-        if (isLocalUser && isCameraOn && mediaCapture) {
+    // 监听本地流状态变化（用户点击开启摄像头）
+    onIsStreamActiveChanged: {
+        console.log("[VideoItem] onIsStreamActiveChanged: tileId=", tileId, "isLocalUser=", isLocalUser, "isStreamActive=", isStreamActive)
+        if (isLocalUser && !isScreenTile && isStreamActive && mediaCapture) {
             console.log("[VideoItem] isCameraOn 变为 true，准备绑定 VideoSink")
             // 延迟绑定，确保 VideoOutput 已经准备好
-            bindVideoSinkTimer.start()
+            scheduleLocalVideoBinding()
+        } else if (isLocalUser && isScreenTile && isStreamActive && screenCapture) {
+            console.log("[VideoItem] 屏幕共享变为 true，准备绑定 VideoSink")
+            scheduleLocalVideoBinding()
+        } else if (!isLocalUser && !isStreamActive) {
+            releaseRemoteVideoSink()
         }
     }
     
     // 监听全局摄像头状态变化（针对本地用户）
     Connections {
-        target: isLocalUser ? meetingController : null
+        target: isLocalUser && !isScreenTile ? meetingController : null
         
         function onCameraOnChanged() {
             console.log("[VideoItem] meetingController.cameraOnChanged: isCameraOn=", meetingController.isCameraOn)
             if (isLocalUser && meetingController.isCameraOn && mediaCapture) {
                 console.log("[VideoItem] 通过 Connections 检测到摄像头开启，准备绑定 VideoSink")
-                bindVideoSinkTimer.start()
+                scheduleLocalVideoBinding()
             }
         }
     }
@@ -76,15 +127,55 @@ Rectangle {
     Timer {
         id: bindVideoSinkTimer
         interval: 100
-        repeat: false
+        repeat: true
+        property int attemptsRemaining: 0
+
+        function schedule() {
+            attemptsRemaining = 8
+            restart()
+        }
+
         onTriggered: {
             console.log("[VideoItem] 定时器触发, localVideoOutput=", localVideoOutput ? "有效" : "null", 
                         "videoSink=", (localVideoOutput && localVideoOutput.videoSink) ? "有效" : "null")
-            if (isLocalUser && mediaCapture && localVideoOutput && localVideoOutput.videoSink) {
+            if (isLocalUser && !isScreenTile && mediaCapture && localVideoOutput && localVideoOutput.videoSink) {
                 console.log("[VideoItem] 调用 mediaCapture.bindVideoSink")
                 // 【关键调用】将 VideoOutput 的 videoSink 传给 MediaCapture
                 // 必须使用 bindVideoSink（Q_INVOKABLE），不能用 setVideoSink（普通方法）
                 mediaCapture.bindVideoSink(localVideoOutput.videoSink)
+                stop()
+                return
+            }
+
+            attemptsRemaining--
+            if (attemptsRemaining <= 0) {
+                stop()
+            }
+        }
+    }
+
+    Timer {
+        id: bindScreenShareVideoSinkTimer
+        interval: 100
+        repeat: true
+        property int attemptsRemaining: 0
+
+        function schedule() {
+            attemptsRemaining = 8
+            restart()
+        }
+
+        onTriggered: {
+            if (isLocalUser && isScreenTile && screenCapture && screenShareVideoOutput && screenShareVideoOutput.videoSink) {
+                console.log("[VideoItem] 调用 screenCapture.bindVideoSink")
+                screenCapture.bindVideoSink(screenShareVideoOutput.videoSink)
+                stop()
+                return
+            }
+
+            attemptsRemaining--
+            if (attemptsRemaining <= 0) {
+                stop()
             }
         }
     }
@@ -94,12 +185,12 @@ Rectangle {
         anchors.fill: parent
         anchors.margins: 2
         
-        // 当摄像头关闭时显示头像
+        // 当当前流未开启时显示头像
         Rectangle {
             anchors.fill: parent
             radius: 6
             color: "#1A1A2E"
-            visible: !isCameraOn
+            visible: !isStreamActive
             
             Column {
                 anchors.centerIn: parent
@@ -124,13 +215,12 @@ Rectangle {
             }
         }
         
-        // 当摄像头开启 或 本地用户共享屏幕时 显示视频画面
+        // 当前流开启时显示视频画面
         Rectangle {
             id: videoContainer
             anchors.fill: parent
             radius: 6
-            // 【修复】当摄像头开启 或 本地用户正在屏幕共享时，显示视频容器
-            visible: isCameraOn || (isLocalUser && isScreenSharing)
+            visible: isStreamActive
             clip: true
             color: "#1A1A2E"
             
@@ -138,7 +228,7 @@ Rectangle {
             VideoOutput {
                 id: localVideoOutput
                 anchors.fill: parent
-                visible: isLocalUser && isCameraOn && mediaCapture !== null && mediaCapture.cameraActive
+                visible: isLocalUser && !isScreenTile && isStreamActive && mediaCapture !== null && mediaCapture.cameraActive
                 fillMode: VideoOutput.PreserveAspectCrop
                 
                 // 镜像显示本地摄像头（更自然）
@@ -149,21 +239,24 @@ Rectangle {
                 
                 Component.onCompleted: {
                     console.log("[VideoItem] VideoOutput 初始化, isLocalUser=", isLocalUser, "participantName=", participantName)
-                    if (isLocalUser && mediaCapture && localVideoOutput.videoSink) {
-                        console.log("[VideoItem] 尝试绑定 VideoSink")
-                        mediaCapture.bindVideoSink(localVideoOutput.videoSink)
+                    videoItem.scheduleLocalVideoBinding()
+                }
+
+                onVisibleChanged: {
+                    if (visible) {
+                        videoItem.scheduleLocalVideoBinding()
                     }
                 }
             }
             
             // 监听摄像头状态变化
             Connections {
-                target: isLocalUser && mediaCapture ? mediaCapture : null
+                target: isLocalUser && !isScreenTile && mediaCapture ? mediaCapture : null
                 
                 function onCameraActiveChanged() {
-                    if (isLocalUser && mediaCapture && mediaCapture.cameraActive && localVideoOutput.videoSink) {
+                    if (isLocalUser && !isScreenTile && mediaCapture && mediaCapture.cameraActive) {
                         console.log("[VideoItem] 摄像头激活，重新绑定 VideoSink")
-                        mediaCapture.bindVideoSink(localVideoOutput.videoSink)
+                        videoItem.scheduleLocalVideoBinding()
                     }
                 }
             }
@@ -172,25 +265,29 @@ Rectangle {
             VideoOutput {
                 id: screenShareVideoOutput
                 anchors.fill: parent
-                visible: isLocalUser && isScreenSharing && screenCapture !== null && screenCapture.isActive
+                visible: isLocalUser && isScreenTile && isStreamActive && screenCapture !== null && screenCapture.isActive
                 fillMode: VideoOutput.PreserveAspectFit
                 
                 Component.onCompleted: {
-                    if (isLocalUser && screenCapture && screenShareVideoOutput.videoSink) {
-                        console.log("[VideoItem] 屏幕共享 VideoOutput 初始化，绑定 VideoSink")
-                        screenCapture.bindVideoSink(screenShareVideoOutput.videoSink)
+                    console.log("[VideoItem] 屏幕共享 VideoOutput 初始化")
+                    videoItem.scheduleLocalVideoBinding()
+                }
+
+                onVisibleChanged: {
+                    if (visible) {
+                        videoItem.scheduleLocalVideoBinding()
                     }
                 }
             }
             
             // 监听屏幕共享状态变化
             Connections {
-                target: isLocalUser && screenCapture ? screenCapture : null
+                target: isLocalUser && isScreenTile && screenCapture ? screenCapture : null
                 
                 function onActiveChanged() {
-                    if (isLocalUser && screenCapture && screenCapture.isActive && screenShareVideoOutput.videoSink) {
+                    if (isLocalUser && isScreenTile && screenCapture && screenCapture.isActive) {
                         console.log("[VideoItem] 屏幕共享激活，绑定 VideoSink")
-                        screenCapture.bindVideoSink(screenShareVideoOutput.videoSink)
+                        videoItem.scheduleLocalVideoBinding()
                     }
                 }
             }
@@ -199,13 +296,13 @@ Rectangle {
             VideoOutput {
                 id: remoteVideoOutput
                 anchors.fill: parent
-                visible: !isLocalUser && isCameraOn
-                fillMode: VideoOutput.PreserveAspectCrop
+                visible: !isLocalUser && isStreamActive
+                fillMode: isScreenTile ? VideoOutput.PreserveAspectFit : VideoOutput.PreserveAspectCrop
                 
                 // 【关键】当 VideoOutput 创建完成后，将其内部 videoSink 传递给 RemoteVideoRenderer
                 // VideoOutput.videoSink 是只读的，我们需要让 RemoteVideoRenderer 写入它
                 Component.onCompleted: {
-                    console.log("[VideoItem] 远程 VideoOutput 初始化, participantId=", participantId, "participantName=", participantName)
+                    console.log("[VideoItem] 远程 VideoOutput 初始化, tileId=", tileId, "participantId=", participantId)
                     bindRemoteVideoSinkTimer.start()
                 }
             }
@@ -215,18 +312,28 @@ Rectangle {
             Connections {
                 target: videoItem
                 function onParticipantIdChanged() {
-                    if (!isLocalUser && participantId !== "" && participantId !== "self") {
-                        console.log("[VideoItem] participantId 变化，重新绑定 VideoSink:", participantId)
+                    if (!isLocalUser && remoteRenderKey !== "") {
+                        console.log("[VideoItem] participantId 变化，重新绑定 VideoSink:", remoteRenderKey)
                         bindRemoteVideoSinkTimer.start()
                     }
                 }
 
-                // 【修复3】当远端用户摄像头重新开启时（isCameraOn: false→true），
+                // 当远端当前路视频重新开启时，重新绑定 VideoSink。
                 // VideoOutput 此时从不可见变为可见但 VideoSink 尚未绑定，
                 // 必须触发一次重新绑定，否则视频始终黑屏。
-                function onIsCameraOnChanged() {
-                    if (!isLocalUser && isCameraOn && participantId !== "" && participantId !== "self") {
-                        console.log("[VideoItem] 远程用户摄像头变为开启，重新绑定 VideoSink:", participantId)
+                function onIsStreamActiveChanged() {
+                    if (!isLocalUser && isStreamActive && remoteRenderKey !== "") {
+                        console.log("[VideoItem] 远端流变为开启，重新绑定 VideoSink:", remoteRenderKey)
+                        bindRemoteVideoSinkTimer.start()
+                    }
+                }
+
+                function onRemoteRenderKeyChanged() {
+                    if (!isLocalUser && lastBoundRenderKey !== "" && lastBoundRenderKey !== remoteRenderKey) {
+                        releaseRemoteVideoSink()
+                    }
+                    if (!isLocalUser && remoteRenderKey !== "") {
+                        console.log("[VideoItem] remoteRenderKey 变化，重新绑定 VideoSink:", remoteRenderKey)
                         bindRemoteVideoSinkTimer.start()
                     }
                 }
@@ -240,10 +347,10 @@ Rectangle {
             // 再延迟 200ms 后重新尝试绑定，确保两种时序都能覆盖。
             Connections {
                 target: liveKitManager
-                function onTrackSubscribed(identity, trackSid, trackKind) {
-                    // trackKind == 1 是视频轨道（livekit::TrackKind::KIND_VIDEO）
-                    if (!isLocalUser && identity === participantId && trackKind === 1) {
-                        console.log("[VideoItem] trackSubscribed 事件，延迟重新绑定 VideoSink:", participantId)
+                function onTrackSubscribed(identity, trackSid, trackKind, trackSource) {
+                    // trackKind == 2 是视频轨道（livekit::TrackKind::KIND_VIDEO）
+                    if (!isLocalUser && identity === participantId && trackKind === 2 && trackSource === streamSource) {
+                        console.log("[VideoItem] trackSubscribed 事件，延迟重新绑定 VideoSink:", remoteRenderKey)
                         bindRemoteVideoSinkTimer.restart()
                     }
                 }
@@ -258,9 +365,9 @@ Rectangle {
                 interval: 200
                 repeat: false
                 onTriggered: {
-                    if (!isLocalUser && participantId !== "" && participantId !== "self" && remoteVideoOutput.videoSink) {
-                        console.log("[VideoItem] 传递 VideoSink 给 RemoteVideoRenderer:", participantId)
-                        liveKitManager.setRemoteVideoSink(participantId, remoteVideoOutput.videoSink)
+                    if (!isLocalUser && remoteRenderKey !== "" && remoteVideoOutput.videoSink) {
+                        console.log("[VideoItem] 传递 VideoSink 给 RemoteVideoRenderer:", remoteRenderKey)
+                        bindRemoteVideoSink()
                     }
                 }
             }
@@ -269,7 +376,7 @@ Rectangle {
             Rectangle {
                 id: remotePlaceholder
                 anchors.fill: parent
-                visible: !isLocalUser && !isCameraOn
+                visible: !isLocalUser && !isStreamActive
                 gradient: Gradient {
                     GradientStop { position: 0.0; color: "#2D3748" }
                     GradientStop { position: 1.0; color: "#1A202C" }
@@ -318,7 +425,7 @@ Rectangle {
             // 参会者名称
             Text {
                 Layout.fillWidth: true
-                text: participantName + (isHost ? " (主持人)" : "")
+                text: participantName + (isScreenTile ? " · " + streamLabel : "") + (isHost ? " (主持人)" : "")
                 font.pixelSize: 12
                 color: "white"
                 elide: Text.ElideRight
@@ -340,9 +447,39 @@ Rectangle {
             
             // 屏幕共享图标
             Text {
-                visible: isScreenSharing
+                visible: isScreenTile
                 text: "🖥"
                 font.pixelSize: 14
+            }
+        }
+    }
+
+    Rectangle {
+        id: focusButton
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.margins: 10
+        width: 34
+        height: 34
+        radius: 17
+        color: isFocused ? "#1E90FFCC" : "#00000088"
+        border.color: isFocused ? "#8FC8FF" : "#FFFFFF33"
+        border.width: 1
+        z: 3
+
+        Text {
+            anchors.centerIn: parent
+            text: isFocused ? "🗗" : "⛶"
+            font.pixelSize: 15
+            color: "white"
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            onClicked: function(mouse) {
+                mouse.accepted = true
+                videoItem.toggleFocusRequested(videoItem.tileId)
             }
         }
     }
@@ -373,7 +510,7 @@ Rectangle {
         }
         
         onDoubleClicked: {
-            // 双击放大视频
+            videoItem.toggleFocusRequested(videoItem.tileId)
         }
     }
     
@@ -389,9 +526,9 @@ Rectangle {
         }
         
         MenuItem {
-            text: "放大视频"
+            text: isFocused ? "取消放大" : "放大视频"
             onTriggered: {
-                // 放大视频逻辑
+                videoItem.toggleFocusRequested(videoItem.tileId)
             }
         }
         

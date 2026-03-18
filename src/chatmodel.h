@@ -3,6 +3,7 @@
 
 #include <QAbstractListModel>
 #include <QList>
+#include <QSet>
 #include <QString>
 #include <QDateTime>
 
@@ -45,11 +46,25 @@ public:
 
     int count() const;
     int unreadCount() const;
+    bool registerRecentMessageAlias(const QString &externalId,
+                                    const QString &senderId,
+                                    const QString &senderName,
+                                    const QString &content, bool isSelf,
+                                    const QDateTime &timestamp,
+                                    int maxAgeMs = 15000);
 
 public slots:
     void sendMessage(const QString &content, const QString &senderName = "我");
     void addSystemMessage(const QString &content);
     void addMessage(const QString &senderId, const QString &senderName, const QString &content, bool isSelf = false);
+    void addMessageWithId(const QString &externalId, const QString &senderId,
+                          const QString &senderName, const QString &content,
+                          bool isSelf = false);
+    void addMessageWithIdAndTimestamp(const QString &externalId,
+                                      const QString &senderId,
+                                      const QString &senderName,
+                                      const QString &content, bool isSelf,
+                                      const QDateTime &timestamp);
     void clear();
     void markAllAsRead();
 
@@ -62,10 +77,15 @@ signals:
     void newMessageReceived();
 
 private:
+    bool appendMessage(const QString &externalId, const QString &senderId,
+                       const QString &senderName, const QString &content,
+                       bool isSystem, bool isSelf,
+                       const QDateTime &timestamp = QDateTime());
     QString generateMessageId() const;
 
 private:
     QList<ChatMessage> m_messages;
+    QSet<QString> m_externalMessageIds;
     int m_unreadCount;
     int m_messageIdCounter;
 };

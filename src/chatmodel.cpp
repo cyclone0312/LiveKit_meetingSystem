@@ -1,5 +1,6 @@
 #include "chatmodel.h"
 #include <QRandomGenerator>
+#include <QtGlobal>
 
 ChatModel::ChatModel(QObject *parent)
     : QAbstractListModel(parent), m_unreadCount(0), m_messageIdCounter(0)
@@ -67,6 +68,50 @@ int ChatModel::unreadCount() const
     return m_unreadCount;
 }
 
+bool ChatModel::registerRecentMessageAlias(const QString &externalId,
+                                           const QString &senderId,
+                                           const QString &senderName,
+                                           const QString &content,
+                                           bool isSelf,
+                                           const QDateTime &timestamp,
+                                           int maxAgeMs)
+{
+    if (externalId.isEmpty())
+        return false;
+
+    if (m_externalMessageIds.contains(externalId))
+        return true;
+
+    const QString trimmedContent = content.trimmed();
+    if (trimmedContent.isEmpty())
+        return false;
+
+    const QDateTime referenceTime =
+        timestamp.isValid() ? timestamp : QDateTime::currentDateTime();
+
+    for (int i = m_messages.count() - 1; i >= 0; --i)
+    {
+        const ChatMessage &message = m_messages.at(i);
+        if (message.isSystem)
+            continue;
+
+        if (message.senderId != senderId || message.senderName != senderName ||
+            message.isSelf != isSelf || message.content != trimmedContent)
+        {
+            continue;
+        }
+
+        const qint64 ageMs = qAbs(message.timestamp.msecsTo(referenceTime));
+        if (ageMs <= maxAgeMs)
+        {
+            m_externalMessageIds.insert(externalId);
+            return true;
+        }
+    }
+
+    return false;
+}
+
 void ChatModel::sendMessage(const QString &content, const QString &senderName)
 {
     if (content.trimmed().isEmpty())
@@ -77,49 +122,76 @@ void ChatModel::sendMessage(const QString &content, const QString &senderName)
 
 void ChatModel::addSystemMessage(const QString &content)
 {
-    beginInsertRows(QModelIndex(), m_messages.count(), m_messages.count());
-
-    ChatMessage message;
-    message.id = generateMessageId();
-    message.senderId = "system";
-    message.senderName = "系统消息";
-    message.content = content;
-    message.timestamp = QDateTime::currentDateTime();
-    message.isSystem = true;
-    message.isSelf = false;
-
-    m_messages.append(message);
-
-    endInsertRows();
-    emit countChanged();
+    appendMessage(QString(), "system", "系统消息", content, true, false);
 }
 
 void ChatModel::addMessage(const QString &senderId, const QString &senderName,
                            const QString &content, bool isSelf)
 {
+    appendMessage(QString(), senderId, senderName, content, false, isSelf);
+}
+
+void ChatModel::addMessageWithId(const QString &externalId,
+                                 const QString &senderId,
+                                 const QString &senderName,
+                                 const QString &content, bool isSelf)
+{
+    appendMessage(externalId, senderId, senderName, content, false, isSelf);
+}
+
+void ChatModel::addMessageWithIdAndTimestamp(const QString &externalId,
+                                             const QString &senderId,
+                                             const QString &senderName,
+                                             const QString &content,
+                                             bool isSelf,
+                                             const QDateTime &timestamp)
+{
+    appendMessage(externalId, senderId, senderName, content, false, isSelf,
+                  timestamp);
+}
+
+bool ChatModel::appendMessage(const QString &externalId, const QString &senderId,
+                              const QString &senderName,
+                              const QString &content, bool isSystem,
+                              bool isSelf, const QDateTime &timestamp)
+{
+    const QString trimmedContent = content.trimmed();
+    if (trimmedContent.isEmpty())
+        return false;
+
+    if (!externalId.isEmpty() && m_externalMessageIds.contains(externalId))
+        return false;
+
     beginInsertRows(QModelIndex(), m_messages.count(), m_messages.count());
 
     ChatMessage message;
-    message.id = generateMessageId();
+    message.id = externalId.isEmpty() ? generateMessageId() : externalId;
     message.senderId = senderId;
     message.senderName = senderName;
-    message.content = content;
-    message.timestamp = QDateTime::currentDateTime();
-    message.isSystem = false;
+    message.content = trimmedContent;
+    message.timestamp = timestamp.isValid() ? timestamp : QDateTime::currentDateTime();
+    message.isSystem = isSystem;
     message.isSelf = isSelf;
 
     m_messages.append(message);
+    if (!externalId.isEmpty())
+        m_externalMessageIds.insert(externalId);
 
     endInsertRows();
     emit countChanged();
 
-    if (!isSelf)
+    if (!isSystem && !isSelf)
     {
         m_unreadCount++;
         emit unreadCountChanged();
     }
 
-    emit newMessageReceived();
+    if (!isSystem)
+    {
+        emit newMessageReceived();
+    }
+
+    return true;
 }
 
 void ChatModel::clear()
@@ -129,6 +201,7 @@ void ChatModel::clear()
 
     beginResetModel();
     m_messages.clear();
+    m_externalMessageIds.clear();
     m_unreadCount = 0;
     endResetModel();
     emit countChanged();
